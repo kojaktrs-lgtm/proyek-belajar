@@ -6,11 +6,11 @@
 //  - Mode Body memakai badan candle (max/min dari open & close)
 //  - Data timeframe besar tidak repaint (candle HTF yang sudah close)
 //  - Timeframe yang lebih kecil / sama dengan chart dilewati (datanya tidak akurat)
-//  - Garis sampai ke candle terakhir (tanpa offset)
-//  - Garis tidak terputus (step line) & level yang berdekatan digabung
+//  - Garis dimulai TEPAT dari candle pembentuk pivot dan lurus sampai candle terakhir
+//  - Level yang berdekatan digabung
 
 //@version=5
-indicator(title = "Multi Timeframe Nearest Support and Resistance", shorttitle = "Nearest SnR MTF", overlay = true)
+indicator(title = "Multi Timeframe Nearest Support and Resistance", shorttitle = "Nearest SnR MTF", overlay = true, max_lines_count = 500)
 
 // SnR Levels
 bars      = input.int(15, title = "Pivot", minval = 1)
@@ -19,8 +19,8 @@ keep      = input.int(50, title = "Jumlah Level Disimpan", minval = 2, maxval = 
      tooltip = "Jumlah pivot terakhir (high & low) per timeframe yang dipakai untuk mencari support dan resistance terdekat.")
 hapus     = input.string("Tersentuh", title = "Hapus Level Jika", options = ["Tersentuh", "Ditembus Close"],
      tooltip = "Tersentuh = level dihapus begitu harga menyentuhnya (Type Wick: high/low, Type Body: badan candle). Ditembus Close = level dihapus jika candle close melewatinya.")
-gabung     = input.float(0.3, title = "Gabung Level Berdekatan (x ATR)", minval = 0, step = 0.1,
-     tooltip = "Pivot baru yang jaraknya kurang dari nilai ini (dikali ATR 14) dari level yang sudah ada tidak dibuat level baru, agar tidak muncul garis dobel/putus di harga yang hampir sama. Isi 0 untuk mematikan.")
+gabung    = input.float(0.3, title = "Gabung Level Berdekatan (x ATR)", minval = 0, step = 0.1,
+     tooltip = "Pivot baru yang jaraknya kurang dari nilai ini (dikali ATR 14) dari level yang sudah ada tidak dibuat level baru. Isi 0 untuk mematikan.")
 
 show_c    = input.bool(true,  title = "Current Timeframe", group = "Timeframes")
 show_5m   = input.bool(false, title = "M5",     group = "Timeframes")
@@ -33,15 +33,17 @@ show_w    = input.bool(false, title = "Weekly", group = "Timeframes")
 
 use_wick  = tipe == "Wick"
 tol       = ta.atr(14) * gabung
+src_high  = use_wick ? high : math.max(open, close)
+src_low   = use_wick ? low  : math.min(open, close)
 
-// Pivot high & low. Body = bagian atas/bawah badan candle.
+// Pivot high & low + waktu candle pivot. Body = bagian atas/bawah badan candle.
 // delay = 1 dipakai untuk timeframe besar agar hanya memakai candle HTF yang sudah close.
 pivots(int len, bool wick, int delay) =>
-    float src_high = wick ? high : math.max(open, close)
-    float src_low  = wick ? low  : math.min(open, close)
-    float ph = ta.pivothigh(src_high, len, len)
-    float pl = ta.pivotlow(src_low, len, len)
-    [ph[delay], pl[delay]]
+    float hi = wick ? high : math.max(open, close)
+    float lo = wick ? low  : math.min(open, close)
+    float ph = ta.pivothigh(hi, len, len)
+    float pl = ta.pivotlow(lo, len, len)
+    [ph[delay], pl[delay], time[len + delay]]
 
 // Hanya timeframe yang lebih besar dari chart yang dipakai.
 is_higher(string tf) =>
@@ -49,6 +51,41 @@ is_higher(string tf) =>
 
 htf_pivots(string tf) =>
     request.security(syminfo.tickerid, tf, pivots(bars, use_wick, 1), lookahead = barmerge.lookahead_on)
+
+// Untuk timeframe besar: cari candle CHART yang menjadi titik tertinggi / terendah
+// di dalam setiap candle HTF, supaya garis HTF dimulai tepat di candle pembentuk pivot.
+htf_anchor(string tf, int len) =>
+    var hi_hist  = array.new_int()
+    var lo_hist  = array.new_int()
+    var float cur_hi   = na
+    var float cur_lo   = na
+    var int   cur_hi_t = na
+    var int   cur_lo_t = na
+    bool new_htf = timeframe.change(tf)
+    if new_htf and not na(cur_hi_t)
+        array.push(hi_hist, cur_hi_t)
+        array.push(lo_hist, cur_lo_t)
+        if array.size(hi_hist) > len + 2
+            array.shift(hi_hist)
+            array.shift(lo_hist)
+        cur_hi := na
+        cur_lo := na
+    if na(cur_hi) or src_high > cur_hi
+        cur_hi   := src_high
+        cur_hi_t := time
+    if na(cur_lo) or src_low < cur_lo
+        cur_lo   := src_low
+        cur_lo_t := time
+    int idx  = array.size(hi_hist) - 1 - len
+    int hi_t = idx >= 0 ? array.get(hi_hist, idx) : na
+    int lo_t = idx >= 0 ? array.get(lo_hist, idx) : na
+    [hi_t, lo_t]
+
+// Pakai waktu candle chart jika memang berada di dalam candle HTF pivot,
+// jika tidak (history chart kurang panjang) pakai waktu candle HTF.
+anchor_time(int chart_t, int htf_t, string tf) =>
+    bool ok = not na(chart_t) and not na(htf_t) and chart_t >= htf_t and chart_t < htf_t + timeframe.in_seconds(tf) * 1000
+    ok ? chart_t : htf_t
 
 // Cek apakah sudah ada level yang jaraknya <= tol dari harga baru.
 has_near(float[] arr, float price) =>
@@ -60,30 +97,37 @@ has_near(float[] arr, float price) =>
                 break
     found
 
-// Resistance (dari pivot high) dan support (dari pivot low) disimpan terpisah.
-// Resistance yang ditembus / support yang terinjak langsung dihapus dari memori.
-// Dari level yang tersisa dicari yang TERDEKAT dengan harga:
-//   resistance = level terendah, support = level tertinggi.
+// Resistance (dari pivot high) dan support (dari pivot low) disimpan terpisah
+// bersama waktu candle pivotnya. Resistance yang ditembus / support yang terinjak
+// langsung dihapus. Dari level yang tersisa dicari yang TERDEKAT dengan harga.
 // Setiap pemanggilan fungsi punya memori (var) sendiri, jadi tiap timeframe terpisah.
-nearest_snr(float ph, float pl, bool is_new, bool enabled) =>
+nearest_snr(float ph, float pl, int ph_t, int pl_t, bool is_new, bool enabled) =>
     var res_levels = array.new_float()
+    var res_times  = array.new_int()
     var sup_levels = array.new_float()
-    float res = na
-    float sup = na
+    var sup_times  = array.new_int()
+    float res   = na
+    int   res_t = na
+    float sup   = na
+    int   sup_t = na
     if enabled
         if is_new
             if not na(ph) and not has_near(res_levels, ph)
                 array.push(res_levels, ph)
+                array.push(res_times, ph_t)
             if not na(pl) and not has_near(sup_levels, pl)
                 array.push(sup_levels, pl)
+                array.push(sup_times, pl_t)
             while array.size(res_levels) > keep
                 array.shift(res_levels)
+                array.shift(res_times)
             while array.size(sup_levels) > keep
                 array.shift(sup_levels)
+                array.shift(sup_times)
 
         bool  by_touch  = hapus == "Tersentuh"
-        float top_price = by_touch ? (use_wick ? high : math.max(open, close)) : close
-        float bot_price = by_touch ? (use_wick ? low  : math.min(open, close)) : close
+        float top_price = by_touch ? src_high : close
+        float bot_price = by_touch ? src_low  : close
 
         // Loop mundur supaya aman saat menghapus elemen array
         if array.size(res_levels) > 0
@@ -92,8 +136,10 @@ nearest_snr(float ph, float pl, bool is_new, bool enabled) =>
                 broken = by_touch ? top_price >= lvl : top_price > lvl
                 if broken
                     array.remove(res_levels, i)
+                    array.remove(res_times, i)
                 else if na(res) or lvl < res
-                    res := lvl
+                    res   := lvl
+                    res_t := array.get(res_times, i)
 
         if array.size(sup_levels) > 0
             for i = array.size(sup_levels) - 1 to 0
@@ -101,52 +147,68 @@ nearest_snr(float ph, float pl, bool is_new, bool enabled) =>
                 broken = by_touch ? bot_price <= lvl : bot_price < lvl
                 if broken
                     array.remove(sup_levels, i)
+                    array.remove(sup_times, i)
                 else if na(sup) or lvl > sup
-                    sup := lvl
-    [res, sup]
+                    sup   := lvl
+                    sup_t := array.get(sup_times, i)
+    [res, res_t, sup, sup_t]
 
-[ph_c,   pl_c  ] = pivots(bars, use_wick, 0)
-[ph_5m,  pl_5m ] = htf_pivots("5")
-[ph_15m, pl_15m] = htf_pivots("15")
-[ph_30m, pl_30m] = htf_pivots("30")
-[ph_1h,  pl_1h ] = htf_pivots("60")
-[ph_4h,  pl_4h ] = htf_pivots("240")
-[ph_d,   pl_d  ] = htf_pivots("D")
-[ph_w,   pl_w  ] = htf_pivots("W")
+// Pivot
+[ph_c,   pl_c,   t_c  ] = pivots(bars, use_wick, 0)
+[ph_5m,  pl_5m,  t_5m ] = htf_pivots("5")
+[ph_15m, pl_15m, t_15m] = htf_pivots("15")
+[ph_30m, pl_30m, t_30m] = htf_pivots("30")
+[ph_1h,  pl_1h,  t_1h ] = htf_pivots("60")
+[ph_4h,  pl_4h,  t_4h ] = htf_pivots("240")
+[ph_d,   pl_d,   t_d  ] = htf_pivots("D")
+[ph_w,   pl_w,   t_w  ] = htf_pivots("W")
 
-[res_c,   sup_c  ] = nearest_snr(ph_c,   pl_c,   true,                    show_c)
-[res_5m,  sup_5m ] = nearest_snr(ph_5m,  pl_5m,  timeframe.change("5"),   show_5m  and is_higher("5"))
-[res_15m, sup_15m] = nearest_snr(ph_15m, pl_15m, timeframe.change("15"),  show_15m and is_higher("15"))
-[res_30m, sup_30m] = nearest_snr(ph_30m, pl_30m, timeframe.change("30"),  show_30m and is_higher("30"))
-[res_1h,  sup_1h ] = nearest_snr(ph_1h,  pl_1h,  timeframe.change("60"),  show_1h  and is_higher("60"))
-[res_4h,  sup_4h ] = nearest_snr(ph_4h,  pl_4h,  timeframe.change("240"), show_4h  and is_higher("240"))
-[res_d,   sup_d  ] = nearest_snr(ph_d,   pl_d,   timeframe.change("D"),   show_d   and is_higher("D"))
-[res_w,   sup_w  ] = nearest_snr(ph_w,   pl_w,   timeframe.change("W"),   show_w   and is_higher("W"))
+// Candle chart pembentuk pivot HTF
+[ah_5m,  al_5m ] = htf_anchor("5",   bars)
+[ah_15m, al_15m] = htf_anchor("15",  bars)
+[ah_30m, al_30m] = htf_anchor("30",  bars)
+[ah_1h,  al_1h ] = htf_anchor("60",  bars)
+[ah_4h,  al_4h ] = htf_anchor("240", bars)
+[ah_d,   al_d  ] = htf_anchor("D",   bars)
+[ah_w,   al_w  ] = htf_anchor("W",   bars)
 
-// Garis bertangga (step line): tetap tersambung saat level berganti.
-resistance_5m  = plot(res_5m,  color = #00aeff,   linewidth = 2, style = plot.style_stepline, title = "Resistance M5")
-support_5m     = plot(sup_5m,  color = #ffbf00,   linewidth = 2, style = plot.style_stepline, title = "Support M5")
+// Support & resistance terdekat
+[res_c,   rt_c,   sup_c,   st_c  ] = nearest_snr(ph_c,   pl_c,   t_c, t_c, true, show_c)
+[res_5m,  rt_5m,  sup_5m,  st_5m ] = nearest_snr(ph_5m,  pl_5m,  anchor_time(ah_5m,  t_5m,  "5"),   anchor_time(al_5m,  t_5m,  "5"),   timeframe.change("5"),   show_5m  and is_higher("5"))
+[res_15m, rt_15m, sup_15m, st_15m] = nearest_snr(ph_15m, pl_15m, anchor_time(ah_15m, t_15m, "15"),  anchor_time(al_15m, t_15m, "15"),  timeframe.change("15"),  show_15m and is_higher("15"))
+[res_30m, rt_30m, sup_30m, st_30m] = nearest_snr(ph_30m, pl_30m, anchor_time(ah_30m, t_30m, "30"),  anchor_time(al_30m, t_30m, "30"),  timeframe.change("30"),  show_30m and is_higher("30"))
+[res_1h,  rt_1h,  sup_1h,  st_1h ] = nearest_snr(ph_1h,  pl_1h,  anchor_time(ah_1h,  t_1h,  "60"),  anchor_time(al_1h,  t_1h,  "60"),  timeframe.change("60"),  show_1h  and is_higher("60"))
+[res_4h,  rt_4h,  sup_4h,  st_4h ] = nearest_snr(ph_4h,  pl_4h,  anchor_time(ah_4h,  t_4h,  "240"), anchor_time(al_4h,  t_4h,  "240"), timeframe.change("240"), show_4h  and is_higher("240"))
+[res_d,   rt_d,   sup_d,   st_d  ] = nearest_snr(ph_d,   pl_d,   anchor_time(ah_d,   t_d,   "D"),   anchor_time(al_d,   t_d,   "D"),   timeframe.change("D"),   show_d   and is_higher("D"))
+[res_w,   rt_w,   sup_w,   st_w  ] = nearest_snr(ph_w,   pl_w,   anchor_time(ah_w,   t_w,   "W"),   anchor_time(al_w,   t_w,   "W"),   timeframe.change("W"),   show_w   and is_higher("W"))
 
-resistance_15m = plot(res_15m, color = #00aeffdd, linewidth = 2, style = plot.style_stepline, title = "Resistance M15")
-support_15m    = plot(sup_15m, color = #ffbf00dd, linewidth = 2, style = plot.style_stepline, title = "Support M15")
+// Gambar garis: lurus dari candle pivot sampai candle terakhir.
+var drawn = array.new_line()
 
-resistance_30m = plot(res_30m, color = #00aeffbb, linewidth = 2, style = plot.style_stepline, title = "Resistance M30")
-support_30m    = plot(sup_30m, color = #ffbf00bb, linewidth = 2, style = plot.style_stepline, title = "Support M30")
+draw(float price, int t, color col) =>
+    if not na(price) and not na(t)
+        array.push(drawn, line.new(t, price, time, price, xloc = xloc.bar_time, color = col, width = 2))
 
-resistance_1h  = plot(res_1h,  color = #00aeff90, linewidth = 2, style = plot.style_stepline, title = "Resistance H1")
-support_1h     = plot(sup_1h,  color = #ffbf0090, linewidth = 2, style = plot.style_stepline, title = "Support H1")
+if barstate.islast
+    while array.size(drawn) > 0
+        line.delete(array.pop(drawn))
 
-resistance_4h  = plot(res_4h,  color = #00aeff70, linewidth = 2, style = plot.style_stepline, title = "Resistance H4")
-support_4h     = plot(sup_4h,  color = #ffbf0070, linewidth = 2, style = plot.style_stepline, title = "Support H4")
-
-resistance_d   = plot(res_d,   color = #00aeff50, linewidth = 2, style = plot.style_stepline, title = "Resistance Daily")
-support_d      = plot(sup_d,   color = #ffbf0050, linewidth = 2, style = plot.style_stepline, title = "Support Daily")
-
-resistance_w   = plot(res_w,   color = #00aeff30, linewidth = 2, style = plot.style_stepline, title = "Resistance Weekly")
-support_w      = plot(sup_w,   color = #ffbf0030, linewidth = 2, style = plot.style_stepline, title = "Support Weekly")
-
-resistance_c   = plot(res_c,   color = #ff0040,   linewidth = 2, style = plot.style_stepline, title = "Resistance Current Timeframe")
-support_c      = plot(sup_c,   color = #6aff00,   linewidth = 2, style = plot.style_stepline, title = "Support Current Timeframe")
+    draw(res_5m,  rt_5m,  #00aeff)
+    draw(sup_5m,  st_5m,  #ffbf00)
+    draw(res_15m, rt_15m, #00aeffdd)
+    draw(sup_15m, st_15m, #ffbf00dd)
+    draw(res_30m, rt_30m, #00aeffbb)
+    draw(sup_30m, st_30m, #ffbf00bb)
+    draw(res_1h,  rt_1h,  #00aeff90)
+    draw(sup_1h,  st_1h,  #ffbf0090)
+    draw(res_4h,  rt_4h,  #00aeff70)
+    draw(sup_4h,  st_4h,  #ffbf0070)
+    draw(res_d,   rt_d,   #00aeff50)
+    draw(sup_d,   st_d,   #ffbf0050)
+    draw(res_w,   rt_w,   #00aeff30)
+    draw(sup_w,   st_w,   #ffbf0030)
+    draw(res_c,   rt_c,   #ff0040)
+    draw(sup_c,   st_c,   #6aff00)
 
 // Adaptive Moving Average
 plot_ama   = input.bool(false, title = "Adaptive Moving Average")
