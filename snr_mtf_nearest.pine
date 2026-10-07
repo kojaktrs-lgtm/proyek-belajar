@@ -1,18 +1,19 @@
 // This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
 // Berdasarkan "Multi Timeframe Support and Resistance" © SUAR PRO
 // Modifikasi:
-//  - SnR dihitung dari level TERDEKAT terhadap harga (bukan sekadar pivot terakhir)
+//  - Setiap swing high (HH/LH) = resistance, setiap swing low (HL/LL) = support
+//  - Semua swing yang BELUM tersentuh tetap ditampilkan sebagai SnR
 //  - Support yang sudah terinjak & resistance yang sudah ditembus dihapus
+//  - Label struktur pasar HH / LH / HL / LL di setiap level
 //  - Mode Body memakai badan candle (max/min dari open & close)
 //  - Pivot kiri & kanan terpisah, agar swing kecil / baru tetap terdeteksi
-//  - Bisa menampilkan beberapa SnR terdekat sekaligus
 //  - Data timeframe besar tidak repaint (candle HTF yang sudah close)
 //  - Timeframe yang lebih kecil / sama dengan chart dilewati (datanya tidak akurat)
 //  - Garis dimulai TEPAT dari candle pembentuk pivot dan lurus sampai candle terakhir
 //  - Level yang berdekatan digabung
 
 //@version=5
-indicator(title = "Multi Timeframe Nearest Support and Resistance", shorttitle = "Nearest SnR MTF", overlay = true, max_lines_count = 500)
+indicator(title = "Multi Timeframe Nearest Support and Resistance", shorttitle = "Nearest SnR MTF", overlay = true, max_lines_count = 500, max_labels_count = 500)
 
 // SnR Levels
 left_bars  = input.int(5, title = "Pivot Kiri", minval = 1,
@@ -20,14 +21,15 @@ left_bars  = input.int(5, title = "Pivot Kiri", minval = 1,
 right_bars = input.int(3, title = "Pivot Kanan", minval = 1,
      tooltip = "Jumlah candle SESUDAH puncak/lembah untuk konfirmasi. Garis baru muncul setelah sejumlah candle ini terbentuk. Makin kecil, makin cepat muncul.")
 tipe       = input.string("Body", title = "Type", options = ["Wick", "Body"])
-show_n     = input.int(2, title = "Jumlah Garis per Sisi", minval = 1, maxval = 10,
-     tooltip = "Berapa resistance terdekat (di atas harga) dan support terdekat (di bawah harga) yang ditampilkan per timeframe.")
-keep       = input.int(50, title = "Jumlah Level Disimpan", minval = 2, maxval = 500,
-     tooltip = "Jumlah pivot terakhir (high & low) per timeframe yang dipakai untuk mencari support dan resistance terdekat.")
+show_n     = input.int(0, title = "Jumlah Garis per Sisi (0 = semua)", minval = 0, maxval = 50,
+     tooltip = "0 = tampilkan SEMUA swing yang belum tersentuh. Isi angka (mis. 3) untuk hanya menampilkan sejumlah resistance & support terdekat dari harga.")
+keep       = input.int(100, title = "Maksimal Level Disimpan", minval = 2, maxval = 500,
+     tooltip = "Batas jumlah level aktif per sisi per timeframe. Jika lebih, level yang PALING JAUH dari harga yang dibuang.")
 hapus      = input.string("Tersentuh", title = "Hapus Level Jika", options = ["Tersentuh", "Ditembus Close"],
      tooltip = "Tersentuh = level dihapus begitu harga menyentuhnya (Type Wick: high/low, Type Body: badan candle). Ditembus Close = level dihapus jika candle close melewatinya.")
 gabung     = input.float(0.3, title = "Gabung Level Berdekatan (x ATR)", minval = 0, step = 0.1,
      tooltip = "Pivot baru yang jaraknya kurang dari nilai ini (dikali ATR 14) dari level yang sudah ada tidak dibuat level baru. Isi 0 untuk mematikan.")
+show_lbl   = input.bool(true, title = "Label HH / LH / HL / LL")
 
 show_c    = input.bool(true,  title = "Current Timeframe", group = "Timeframes")
 show_5m   = input.bool(false, title = "M5",     group = "Timeframes")
@@ -104,49 +106,77 @@ has_near(float[] arr, float price) =>
                 break
     found
 
-// Semua garis yang sedang tampil (digambar ulang di candle terakhir).
-var drawn = array.new_line()
-if barstate.islast
-    while array.size(drawn) > 0
-        line.delete(array.pop(drawn))
+// Jika level melebihi batas, buang yang paling jauh dari harga.
+trim(float[] levels, int[] times, string[] kinds) =>
+    while array.size(levels) > keep
+        int   far_i = 0
+        float far_d = -1.0
+        for i = 0 to array.size(levels) - 1
+            float d = math.abs(array.get(levels, i) - close)
+            if d > far_d
+                far_d := d
+                far_i := i
+        array.remove(levels, far_i)
+        array.remove(times, far_i)
+        array.remove(kinds, far_i)
 
-// Gambar N level terdekat: lurus dari candle pivot sampai candle terakhir.
+// Semua garis & label yang sedang tampil (digambar ulang di candle terakhir).
+var drawn_lines  = array.new_line()
+var drawn_labels = array.new_label()
+if barstate.islast
+    while array.size(drawn_lines) > 0
+        line.delete(array.pop(drawn_lines))
+    while array.size(drawn_labels) > 0
+        label.delete(array.pop(drawn_labels))
+
+// Gambar level dari yang terdekat: lurus dari candle pivot sampai candle terakhir.
 // Resistance: urut naik (terendah = terdekat). Support: urut turun (tertinggi = terdekat).
-draw_nearest(float[] levels, int[] times, bool is_res, color col) =>
-    if array.size(levels) > 0
+draw_levels(float[] levels, int[] times, string[] kinds, bool is_res, color col, string tf_name) =>
+    int sz = array.size(levels)
+    if sz > 0
         int[] idx = array.sort_indices(levels, is_res ? order.ascending : order.descending)
-        int n = math.min(show_n, array.size(idx))
+        int n = show_n == 0 ? sz : math.min(show_n, sz)
         for k = 0 to n - 1
             int   i     = array.get(idx, k)
             float price = array.get(levels, i)
             int   t     = array.get(times, i)
             if not na(t)
-                array.push(drawn, line.new(t, price, time, price, xloc = xloc.bar_time, color = col, width = 2))
+                array.push(drawn_lines, line.new(t, price, time, price, xloc = xloc.bar_time, color = col, width = 2))
+                if show_lbl
+                    string txt = tf_name == "" ? array.get(kinds, i) : array.get(kinds, i) + " " + tf_name
+                    array.push(drawn_labels, label.new(t, price, txt, xloc = xloc.bar_time,
+                         style = is_res ? label.style_label_down : label.style_label_up,
+                         color = color.new(color.black, 100), textcolor = col, size = size.small))
 
-// Resistance (dari pivot high) dan support (dari pivot low) disimpan terpisah
-// bersama waktu candle pivotnya. Resistance yang ditembus / support yang terinjak
-// langsung dihapus. Level yang tersisa: resistance pasti di atas harga, support
-// pasti di bawah harga, lalu yang terdekat digambar.
+// Swing high -> resistance (HH jika lebih tinggi dari swing high sebelumnya, LH jika lebih rendah).
+// Swing low  -> support    (HL jika lebih tinggi dari swing low sebelumnya,  LL jika lebih rendah).
+// Level yang ditembus / terinjak dihapus; sisanya (semua yang belum tersentuh) digambar.
 // Setiap pemanggilan fungsi punya memori (var) sendiri, jadi tiap timeframe terpisah.
-snr(float ph, float pl, int ph_t, int pl_t, bool is_new, bool enabled, color res_col, color sup_col) =>
+snr(float ph, float pl, int ph_t, int pl_t, bool is_new, bool enabled, color res_col, color sup_col, string tf_name) =>
     var res_levels = array.new_float()
     var res_times  = array.new_int()
+    var res_kinds  = array.new_string()
     var sup_levels = array.new_float()
     var sup_times  = array.new_int()
+    var sup_kinds  = array.new_string()
+    var float last_ph = na
+    var float last_pl = na
     if enabled
         if is_new
-            if not na(ph) and not has_near(res_levels, ph)
-                array.push(res_levels, ph)
-                array.push(res_times, ph_t)
-            if not na(pl) and not has_near(sup_levels, pl)
-                array.push(sup_levels, pl)
-                array.push(sup_times, pl_t)
-            while array.size(res_levels) > keep
-                array.shift(res_levels)
-                array.shift(res_times)
-            while array.size(sup_levels) > keep
-                array.shift(sup_levels)
-                array.shift(sup_times)
+            if not na(ph)
+                string kind = na(last_ph) ? "H" : ph > last_ph ? "HH" : ph < last_ph ? "LH" : "EQH"
+                last_ph := ph
+                if not has_near(res_levels, ph)
+                    array.push(res_levels, ph)
+                    array.push(res_times, ph_t)
+                    array.push(res_kinds, kind)
+            if not na(pl)
+                string kind = na(last_pl) ? "L" : pl > last_pl ? "HL" : pl < last_pl ? "LL" : "EQL"
+                last_pl := pl
+                if not has_near(sup_levels, pl)
+                    array.push(sup_levels, pl)
+                    array.push(sup_times, pl_t)
+                    array.push(sup_kinds, kind)
 
         bool  by_touch  = hapus == "Tersentuh"
         float top_price = by_touch ? src_high : close
@@ -159,6 +189,7 @@ snr(float ph, float pl, int ph_t, int pl_t, bool is_new, bool enabled, color res
                 if by_touch ? top_price >= lvl : top_price > lvl
                     array.remove(res_levels, i)
                     array.remove(res_times, i)
+                    array.remove(res_kinds, i)
 
         if array.size(sup_levels) > 0
             for i = array.size(sup_levels) - 1 to 0
@@ -166,10 +197,14 @@ snr(float ph, float pl, int ph_t, int pl_t, bool is_new, bool enabled, color res
                 if by_touch ? bot_price <= lvl : bot_price < lvl
                     array.remove(sup_levels, i)
                     array.remove(sup_times, i)
+                    array.remove(sup_kinds, i)
+
+        trim(res_levels, res_times, res_kinds)
+        trim(sup_levels, sup_times, sup_kinds)
 
         if barstate.islast
-            draw_nearest(res_levels, res_times, true,  res_col)
-            draw_nearest(sup_levels, sup_times, false, sup_col)
+            draw_levels(res_levels, res_times, res_kinds, true,  res_col, tf_name)
+            draw_levels(sup_levels, sup_times, sup_kinds, false, sup_col, tf_name)
 
 // Pivot
 [ph_c,   pl_c,   t_c  ] = pivots(left_bars, right_bars, use_wick, 0)
@@ -190,15 +225,15 @@ snr(float ph, float pl, int ph_t, int pl_t, bool is_new, bool enabled, color res
 [ah_d,   al_d  ] = htf_anchor("D",   right_bars)
 [ah_w,   al_w  ] = htf_anchor("W",   right_bars)
 
-// Support & resistance terdekat per timeframe
-snr(ph_5m,  pl_5m,  anchor_time(ah_5m,  t_5m,  "5"),   anchor_time(al_5m,  t_5m,  "5"),   timeframe.change("5"),   show_5m  and is_higher("5"),   #00aeff,   #ffbf00)
-snr(ph_15m, pl_15m, anchor_time(ah_15m, t_15m, "15"),  anchor_time(al_15m, t_15m, "15"),  timeframe.change("15"),  show_15m and is_higher("15"),  #00aeffdd, #ffbf00dd)
-snr(ph_30m, pl_30m, anchor_time(ah_30m, t_30m, "30"),  anchor_time(al_30m, t_30m, "30"),  timeframe.change("30"),  show_30m and is_higher("30"),  #00aeffbb, #ffbf00bb)
-snr(ph_1h,  pl_1h,  anchor_time(ah_1h,  t_1h,  "60"),  anchor_time(al_1h,  t_1h,  "60"),  timeframe.change("60"),  show_1h  and is_higher("60"),  #00aeff90, #ffbf0090)
-snr(ph_4h,  pl_4h,  anchor_time(ah_4h,  t_4h,  "240"), anchor_time(al_4h,  t_4h,  "240"), timeframe.change("240"), show_4h  and is_higher("240"), #00aeff70, #ffbf0070)
-snr(ph_d,   pl_d,   anchor_time(ah_d,   t_d,   "D"),   anchor_time(al_d,   t_d,   "D"),   timeframe.change("D"),   show_d   and is_higher("D"),   #00aeff50, #ffbf0050)
-snr(ph_w,   pl_w,   anchor_time(ah_w,   t_w,   "W"),   anchor_time(al_w,   t_w,   "W"),   timeframe.change("W"),   show_w   and is_higher("W"),   #00aeff30, #ffbf0030)
-snr(ph_c,   pl_c,   t_c, t_c, true, show_c, #ff0040, #6aff00)
+// Support & resistance per timeframe
+snr(ph_5m,  pl_5m,  anchor_time(ah_5m,  t_5m,  "5"),   anchor_time(al_5m,  t_5m,  "5"),   timeframe.change("5"),   show_5m  and is_higher("5"),   #00aeff,   #ffbf00,   "M5")
+snr(ph_15m, pl_15m, anchor_time(ah_15m, t_15m, "15"),  anchor_time(al_15m, t_15m, "15"),  timeframe.change("15"),  show_15m and is_higher("15"),  #00aeffdd, #ffbf00dd, "M15")
+snr(ph_30m, pl_30m, anchor_time(ah_30m, t_30m, "30"),  anchor_time(al_30m, t_30m, "30"),  timeframe.change("30"),  show_30m and is_higher("30"),  #00aeffbb, #ffbf00bb, "M30")
+snr(ph_1h,  pl_1h,  anchor_time(ah_1h,  t_1h,  "60"),  anchor_time(al_1h,  t_1h,  "60"),  timeframe.change("60"),  show_1h  and is_higher("60"),  #00aeff90, #ffbf0090, "H1")
+snr(ph_4h,  pl_4h,  anchor_time(ah_4h,  t_4h,  "240"), anchor_time(al_4h,  t_4h,  "240"), timeframe.change("240"), show_4h  and is_higher("240"), #00aeff70, #ffbf0070, "H4")
+snr(ph_d,   pl_d,   anchor_time(ah_d,   t_d,   "D"),   anchor_time(al_d,   t_d,   "D"),   timeframe.change("D"),   show_d   and is_higher("D"),   #00aeff50, #ffbf0050, "D")
+snr(ph_w,   pl_w,   anchor_time(ah_w,   t_w,   "W"),   anchor_time(al_w,   t_w,   "W"),   timeframe.change("W"),   show_w   and is_higher("W"),   #00aeff30, #ffbf0030, "W")
+snr(ph_c,   pl_c,   t_c, t_c, true, show_c, #ff0040, #6aff00, "")
 
 // Adaptive Moving Average
 plot_ama   = input.bool(false, title = "Adaptive Moving Average")
