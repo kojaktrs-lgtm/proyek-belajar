@@ -7,6 +7,7 @@
 //  - Data timeframe besar tidak repaint (candle HTF yang sudah close)
 //  - Timeframe yang lebih kecil / sama dengan chart dilewati (datanya tidak akurat)
 //  - Garis sampai ke candle terakhir (tanpa offset)
+//  - Garis tidak terputus (step line) & level yang berdekatan digabung
 
 //@version=5
 indicator(title = "Multi Timeframe Nearest Support and Resistance", shorttitle = "Nearest SnR MTF", overlay = true)
@@ -18,6 +19,8 @@ keep      = input.int(50, title = "Jumlah Level Disimpan", minval = 2, maxval = 
      tooltip = "Jumlah pivot terakhir (high & low) per timeframe yang dipakai untuk mencari support dan resistance terdekat.")
 hapus     = input.string("Tersentuh", title = "Hapus Level Jika", options = ["Tersentuh", "Ditembus Close"],
      tooltip = "Tersentuh = level dihapus begitu harga menyentuhnya (Type Wick: high/low, Type Body: badan candle). Ditembus Close = level dihapus jika candle close melewatinya.")
+gabung     = input.float(0.3, title = "Gabung Level Berdekatan (x ATR)", minval = 0, step = 0.1,
+     tooltip = "Pivot baru yang jaraknya kurang dari nilai ini (dikali ATR 14) dari level yang sudah ada tidak dibuat level baru, agar tidak muncul garis dobel/putus di harga yang hampir sama. Isi 0 untuk mematikan.")
 
 show_c    = input.bool(true,  title = "Current Timeframe", group = "Timeframes")
 show_5m   = input.bool(false, title = "M5",     group = "Timeframes")
@@ -29,6 +32,7 @@ show_d    = input.bool(false, title = "Daily",  group = "Timeframes")
 show_w    = input.bool(false, title = "Weekly", group = "Timeframes")
 
 use_wick  = tipe == "Wick"
+tol       = ta.atr(14) * gabung
 
 // Pivot high & low. Body = bagian atas/bawah badan candle.
 // delay = 1 dipakai untuk timeframe besar agar hanya memakai candle HTF yang sudah close.
@@ -46,6 +50,16 @@ is_higher(string tf) =>
 htf_pivots(string tf) =>
     request.security(syminfo.tickerid, tf, pivots(bars, use_wick, 1), lookahead = barmerge.lookahead_on)
 
+// Cek apakah sudah ada level yang jaraknya <= tol dari harga baru.
+has_near(float[] arr, float price) =>
+    bool found = false
+    if array.size(arr) > 0 and tol > 0
+        for lvl in arr
+            if math.abs(lvl - price) <= tol
+                found := true
+                break
+    found
+
 // Resistance (dari pivot high) dan support (dari pivot low) disimpan terpisah.
 // Resistance yang ditembus / support yang terinjak langsung dihapus dari memori.
 // Dari level yang tersisa dicari yang TERDEKAT dengan harga:
@@ -58,9 +72,9 @@ nearest_snr(float ph, float pl, bool is_new, bool enabled) =>
     float sup = na
     if enabled
         if is_new
-            if not na(ph)
+            if not na(ph) and not has_near(res_levels, ph)
                 array.push(res_levels, ph)
-            if not na(pl)
+            if not na(pl) and not has_near(sup_levels, pl)
                 array.push(sup_levels, pl)
             while array.size(res_levels) > keep
                 array.shift(res_levels)
@@ -109,33 +123,30 @@ nearest_snr(float ph, float pl, bool is_new, bool enabled) =>
 [res_d,   sup_d  ] = nearest_snr(ph_d,   pl_d,   timeframe.change("D"),   show_d   and is_higher("D"))
 [res_w,   sup_w  ] = nearest_snr(ph_w,   pl_w,   timeframe.change("W"),   show_w   and is_higher("W"))
 
-// Garis diputus saat level berganti (sama seperti script asli).
-line_color(float level, color col) =>
-    level != level[1] ? na : col
+// Garis bertangga (step line): tetap tersambung saat level berganti.
+resistance_5m  = plot(res_5m,  color = #00aeff,   linewidth = 2, style = plot.style_stepline, title = "Resistance M5")
+support_5m     = plot(sup_5m,  color = #ffbf00,   linewidth = 2, style = plot.style_stepline, title = "Support M5")
 
-resistance_5m  = plot(res_5m,  color = line_color(res_5m,  #00aeff),   linewidth = 2, title = "Resistance M5")
-support_5m     = plot(sup_5m,  color = line_color(sup_5m,  #ffbf00),   linewidth = 2, title = "Support M5")
+resistance_15m = plot(res_15m, color = #00aeffdd, linewidth = 2, style = plot.style_stepline, title = "Resistance M15")
+support_15m    = plot(sup_15m, color = #ffbf00dd, linewidth = 2, style = plot.style_stepline, title = "Support M15")
 
-resistance_15m = plot(res_15m, color = line_color(res_15m, #00aeffdd), linewidth = 2, title = "Resistance M15")
-support_15m    = plot(sup_15m, color = line_color(sup_15m, #ffbf00dd), linewidth = 2, title = "Support M15")
+resistance_30m = plot(res_30m, color = #00aeffbb, linewidth = 2, style = plot.style_stepline, title = "Resistance M30")
+support_30m    = plot(sup_30m, color = #ffbf00bb, linewidth = 2, style = plot.style_stepline, title = "Support M30")
 
-resistance_30m = plot(res_30m, color = line_color(res_30m, #00aeffbb), linewidth = 2, title = "Resistance M30")
-support_30m    = plot(sup_30m, color = line_color(sup_30m, #ffbf00bb), linewidth = 2, title = "Support M30")
+resistance_1h  = plot(res_1h,  color = #00aeff90, linewidth = 2, style = plot.style_stepline, title = "Resistance H1")
+support_1h     = plot(sup_1h,  color = #ffbf0090, linewidth = 2, style = plot.style_stepline, title = "Support H1")
 
-resistance_1h  = plot(res_1h,  color = line_color(res_1h,  #00aeff90), linewidth = 2, title = "Resistance H1")
-support_1h     = plot(sup_1h,  color = line_color(sup_1h,  #ffbf0090), linewidth = 2, title = "Support H1")
+resistance_4h  = plot(res_4h,  color = #00aeff70, linewidth = 2, style = plot.style_stepline, title = "Resistance H4")
+support_4h     = plot(sup_4h,  color = #ffbf0070, linewidth = 2, style = plot.style_stepline, title = "Support H4")
 
-resistance_4h  = plot(res_4h,  color = line_color(res_4h,  #00aeff70), linewidth = 2, title = "Resistance H4")
-support_4h     = plot(sup_4h,  color = line_color(sup_4h,  #ffbf0070), linewidth = 2, title = "Support H4")
+resistance_d   = plot(res_d,   color = #00aeff50, linewidth = 2, style = plot.style_stepline, title = "Resistance Daily")
+support_d      = plot(sup_d,   color = #ffbf0050, linewidth = 2, style = plot.style_stepline, title = "Support Daily")
 
-resistance_d   = plot(res_d,   color = line_color(res_d,   #00aeff50), linewidth = 2, title = "Resistance Daily")
-support_d      = plot(sup_d,   color = line_color(sup_d,   #ffbf0050), linewidth = 2, title = "Support Daily")
+resistance_w   = plot(res_w,   color = #00aeff30, linewidth = 2, style = plot.style_stepline, title = "Resistance Weekly")
+support_w      = plot(sup_w,   color = #ffbf0030, linewidth = 2, style = plot.style_stepline, title = "Support Weekly")
 
-resistance_w   = plot(res_w,   color = line_color(res_w,   #00aeff30), linewidth = 2, title = "Resistance Weekly")
-support_w      = plot(sup_w,   color = line_color(sup_w,   #ffbf0030), linewidth = 2, title = "Support Weekly")
-
-resistance_c   = plot(res_c,   color = line_color(res_c,   #ff0040),   linewidth = 2, title = "Resistance Current Timeframe")
-support_c      = plot(sup_c,   color = line_color(sup_c,   #6aff00),   linewidth = 2, title = "Support Current Timeframe")
+resistance_c   = plot(res_c,   color = #ff0040,   linewidth = 2, style = plot.style_stepline, title = "Resistance Current Timeframe")
+support_c      = plot(sup_c,   color = #6aff00,   linewidth = 2, style = plot.style_stepline, title = "Support Current Timeframe")
 
 // Adaptive Moving Average
 plot_ama   = input.bool(false, title = "Adaptive Moving Average")
