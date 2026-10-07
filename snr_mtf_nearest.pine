@@ -1,0 +1,126 @@
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
+// Berdasarkan "Multi Timeframe Support and Resistance" © SUAR PRO
+// Modifikasi:
+//  - SnR dihitung dari level TERDEKAT terhadap harga (bukan sekadar pivot terakhir)
+//  - Mode Body memakai badan candle (max/min dari open & close)
+//  - Data timeframe besar tidak repaint (candle HTF yang sudah close)
+//  - Timeframe yang lebih kecil / sama dengan chart dilewati (datanya tidak akurat)
+//  - Garis sampai ke candle terakhir (tanpa offset)
+
+//@version=5
+indicator(title = "Multi Timeframe Nearest Support and Resistance", shorttitle = "Nearest SnR MTF", overlay = true)
+
+// SnR Levels
+bars      = input.int(15, title = "Pivot", minval = 1)
+tipe      = input.string("Body", title = "Type", options = ["Wick", "Body"])
+keep      = input.int(50, title = "Jumlah Level Disimpan", minval = 2, maxval = 500,
+     tooltip = "Jumlah pivot terakhir (high & low) per timeframe yang dipakai untuk mencari support dan resistance terdekat.")
+
+show_c    = input.bool(true,  title = "Current Timeframe", group = "Timeframes")
+show_5m   = input.bool(false, title = "M5",     group = "Timeframes")
+show_15m  = input.bool(false, title = "M15",    group = "Timeframes")
+show_30m  = input.bool(false, title = "M30",    group = "Timeframes")
+show_1h   = input.bool(false, title = "H1",     group = "Timeframes")
+show_4h   = input.bool(false, title = "H4",     group = "Timeframes")
+show_d    = input.bool(false, title = "Daily",  group = "Timeframes")
+show_w    = input.bool(false, title = "Weekly", group = "Timeframes")
+
+use_wick  = tipe == "Wick"
+
+// Pivot high & low. Body = bagian atas/bawah badan candle.
+// delay = 1 dipakai untuk timeframe besar agar hanya memakai candle HTF yang sudah close.
+pivots(int len, bool wick, int delay) =>
+    float src_high = wick ? high : math.max(open, close)
+    float src_low  = wick ? low  : math.min(open, close)
+    float ph = ta.pivothigh(src_high, len, len)
+    float pl = ta.pivotlow(src_low, len, len)
+    [ph[delay], pl[delay]]
+
+// Hanya timeframe yang lebih besar dari chart yang dipakai.
+is_higher(string tf) =>
+    timeframe.in_seconds(tf) > timeframe.in_seconds(timeframe.period)
+
+htf_pivots(string tf) =>
+    request.security(syminfo.tickerid, tf, pivots(bars, use_wick, 1), lookahead = barmerge.lookahead_on)
+
+// Simpan pivot ke memori, lalu cari:
+//   resistance = level terendah DI ATAS harga
+//   support    = level tertinggi DI BAWAH harga
+// Setiap pemanggilan fungsi punya memori (var) sendiri, jadi tiap timeframe terpisah.
+nearest_snr(float ph, float pl, bool is_new, bool enabled) =>
+    var levels = array.new_float()
+    float res = na
+    float sup = na
+    if enabled
+        if is_new
+            if not na(ph)
+                array.push(levels, ph)
+            if not na(pl)
+                array.push(levels, pl)
+            while array.size(levels) > keep
+                array.shift(levels)
+        for lvl in levels
+            if lvl > close and (na(res) or lvl < res)
+                res := lvl
+            if lvl < close and (na(sup) or lvl > sup)
+                sup := lvl
+    [res, sup]
+
+[ph_c,   pl_c  ] = pivots(bars, use_wick, 0)
+[ph_5m,  pl_5m ] = htf_pivots("5")
+[ph_15m, pl_15m] = htf_pivots("15")
+[ph_30m, pl_30m] = htf_pivots("30")
+[ph_1h,  pl_1h ] = htf_pivots("60")
+[ph_4h,  pl_4h ] = htf_pivots("240")
+[ph_d,   pl_d  ] = htf_pivots("D")
+[ph_w,   pl_w  ] = htf_pivots("W")
+
+[res_c,   sup_c  ] = nearest_snr(ph_c,   pl_c,   true,                    show_c)
+[res_5m,  sup_5m ] = nearest_snr(ph_5m,  pl_5m,  timeframe.change("5"),   show_5m  and is_higher("5"))
+[res_15m, sup_15m] = nearest_snr(ph_15m, pl_15m, timeframe.change("15"),  show_15m and is_higher("15"))
+[res_30m, sup_30m] = nearest_snr(ph_30m, pl_30m, timeframe.change("30"),  show_30m and is_higher("30"))
+[res_1h,  sup_1h ] = nearest_snr(ph_1h,  pl_1h,  timeframe.change("60"),  show_1h  and is_higher("60"))
+[res_4h,  sup_4h ] = nearest_snr(ph_4h,  pl_4h,  timeframe.change("240"), show_4h  and is_higher("240"))
+[res_d,   sup_d  ] = nearest_snr(ph_d,   pl_d,   timeframe.change("D"),   show_d   and is_higher("D"))
+[res_w,   sup_w  ] = nearest_snr(ph_w,   pl_w,   timeframe.change("W"),   show_w   and is_higher("W"))
+
+// Garis diputus saat level berganti (sama seperti script asli).
+line_color(float level, color col) =>
+    level != level[1] ? na : col
+
+resistance_5m  = plot(res_5m,  color = line_color(res_5m,  #00aeff),   linewidth = 2, title = "Resistance M5")
+support_5m     = plot(sup_5m,  color = line_color(sup_5m,  #ffbf00),   linewidth = 2, title = "Support M5")
+
+resistance_15m = plot(res_15m, color = line_color(res_15m, #00aeffdd), linewidth = 2, title = "Resistance M15")
+support_15m    = plot(sup_15m, color = line_color(sup_15m, #ffbf00dd), linewidth = 2, title = "Support M15")
+
+resistance_30m = plot(res_30m, color = line_color(res_30m, #00aeffbb), linewidth = 2, title = "Resistance M30")
+support_30m    = plot(sup_30m, color = line_color(sup_30m, #ffbf00bb), linewidth = 2, title = "Support M30")
+
+resistance_1h  = plot(res_1h,  color = line_color(res_1h,  #00aeff90), linewidth = 2, title = "Resistance H1")
+support_1h     = plot(sup_1h,  color = line_color(sup_1h,  #ffbf0090), linewidth = 2, title = "Support H1")
+
+resistance_4h  = plot(res_4h,  color = line_color(res_4h,  #00aeff70), linewidth = 2, title = "Resistance H4")
+support_4h     = plot(sup_4h,  color = line_color(sup_4h,  #ffbf0070), linewidth = 2, title = "Support H4")
+
+resistance_d   = plot(res_d,   color = line_color(res_d,   #00aeff50), linewidth = 2, title = "Resistance Daily")
+support_d      = plot(sup_d,   color = line_color(sup_d,   #ffbf0050), linewidth = 2, title = "Support Daily")
+
+resistance_w   = plot(res_w,   color = line_color(res_w,   #00aeff30), linewidth = 2, title = "Resistance Weekly")
+support_w      = plot(sup_w,   color = line_color(sup_w,   #ffbf0030), linewidth = 2, title = "Support Weekly")
+
+resistance_c   = plot(res_c,   color = line_color(res_c,   #ff0040),   linewidth = 2, title = "Resistance Current Timeframe")
+support_c      = plot(sup_c,   color = line_color(sup_c,   #6aff00),   linewidth = 2, title = "Support Current Timeframe")
+
+// Adaptive Moving Average
+plot_ama   = input.bool(false, title = "Adaptive Moving Average")
+ama_length = input.int(15, title = "Line Length")
+ama_src    = close
+float ama  = 0
+hh         = math.max(math.sign(ta.change(ta.highest(ama_length))), 0)
+ll         = math.max(math.sign(ta.change(ta.lowest(ama_length)) * -1), 0)
+tc         = math.pow(ta.sma(hh or ll ? 1 : 0, ama_length), 2)
+
+ama := nz(ama[1] + tc * (ama_src - ama[1]), ama_src)
+
+garis_ama  = plot(plot_ama ? ama : na, "Adaptive Moving Average", #ffffff, 2)
