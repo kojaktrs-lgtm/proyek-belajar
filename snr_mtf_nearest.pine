@@ -15,8 +15,8 @@
 indicator(title = "Multi Timeframe Nearest Support and Resistance", shorttitle = "Nearest SnR MTF", overlay = true, max_lines_count = 500, max_bars_back = 5000)
 
 // SnR Levels
-swing_pct = input.float(20.0, title = "Minimal Swing (%)", minval = 0.1, step = 0.5,
-     tooltip = "Puncak/lembah baru diakui sebagai SnR jika harga sudah berbalik minimal sebesar ini. Makin besar, makin sedikit dan makin besar swing yang dipakai. Saham harian: 15-25%. Intraday/forex: 1-5%.")
+swing_pct = input.float(15.0, title = "Minimal Swing (%)", minval = 0.1, step = 0.5,
+     tooltip = "Puncak/lembah baru diakui sebagai SnR jika harga sudah berbalik minimal sebesar ini. Makin besar, makin sedikit dan makin besar swing yang dipakai. Saham harian: 10-20%. Intraday/forex: 1-5%.")
 tipe      = input.string("Body", title = "Type", options = ["Wick", "Body"])
 periode   = input.int(300, title = "Periode (jumlah candle, 0 = semua)", minval = 0, maxval = 4999,
      tooltip = "Swing yang lebih lama dari jumlah candle ini diabaikan.")
