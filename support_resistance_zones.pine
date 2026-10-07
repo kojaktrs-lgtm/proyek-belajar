@@ -1,0 +1,114 @@
+//@version=6
+// ============================================================================
+//  Support & Resistance Zones
+//  ----------------------------------------------------------------------------
+//  Menandai area (zona) support dan resistance otomatis berdasarkan pivot
+//  high / pivot low. Lebar zona mengikuti ATR sehingga menyesuaikan volatilitas.
+//
+//  Cara kerja:
+//   1. Setiap pivot high membentuk zona resistance, setiap pivot low membentuk
+//      zona support.
+//   2. Pivot baru yang bertumpuk dengan zona lama akan digabung ke zona itu dan
+//      menambah jumlah "touch" (semakin banyak touch = zona semakin kuat).
+//   3. Peran zona berganti otomatis (role reversal): resistance yang ditembus
+//      ke atas menjadi support, support yang ditembus ke bawah menjadi
+//      resistance.
+//   4. Hanya N zona terbaru yang disimpan agar chart tetap bersih.
+// ============================================================================
+indicator("Support & Resistance Zones", shorttitle = "S/R Zones", overlay = true, max_boxes_count = 500)
+
+// ---------------------------------------------------------------- Inputs ----
+grpPivot = "Deteksi Pivot"
+leftLen  = input.int(10, "Pivot Left Bars",  minval = 1, group = grpPivot)
+rightLen = input.int(10, "Pivot Right Bars", minval = 1, group = grpPivot,
+     tooltip = "Semakin besar nilainya, semakin sedikit dan semakin signifikan zona yang terdeteksi. Zona baru muncul setelah 'Right Bars' candle terkonfirmasi.")
+
+grpZone    = "Zona"
+atrLen     = input.int(14, "ATR Length", minval = 1, group = grpZone)
+zoneMult   = input.float(0.5, "Lebar Zona (x ATR)", minval = 0.05, step = 0.05, group = grpZone)
+maxZones   = input.int(10, "Maksimal Zona", minval = 1, maxval = 100, group = grpZone)
+minTouches = input.int(1, "Minimal Touch untuk Ditampilkan", minval = 1, group = grpZone)
+extendZone = input.bool(true, "Perpanjang Zona ke Kanan", group = grpZone)
+
+grpStyle  = "Tampilan"
+supColor  = input.color(color.new(color.teal, 75), "Warna Support",    group = grpStyle)
+resColor  = input.color(color.new(color.red,  75), "Warna Resistance", group = grpStyle)
+showLabel = input.bool(true, "Tampilkan Label (S/R + jumlah touch)", group = grpStyle)
+
+// ----------------------------------------------------------------- Types ----
+type Zone
+    float top
+    float bot
+    int   touches
+    bool  isSupport
+    box   bx
+
+// ----------------------------------------------------------------- State ----
+var array<Zone> zones = array.new<Zone>()
+
+atr = ta.atr(atrLen)
+ph  = ta.pivothigh(high, leftLen, rightLen)
+pl  = ta.pivotlow(low,  leftLen, rightLen)
+
+// --------------------------------------------------------------- Helpers ----
+// Tambahkan zona baru atau gabungkan ke zona lama yang bertumpuk.
+addZone(float zTop, float zBot, bool support) =>
+    merged = false
+    if zones.size() > 0
+        for z in zones
+            if zTop >= z.bot and zBot <= z.top
+                z.top     := math.max(z.top, zTop)
+                z.bot     := math.min(z.bot, zBot)
+                z.touches += 1
+                merged    := true
+                break
+    if not merged
+        startBar = bar_index - rightLen
+        b = box.new(startBar, zTop, bar_index, zBot, border_width = 0, bgcolor = support ? supColor : resColor,
+             extend = extendZone ? extend.right : extend.none, text_size = size.small, text_halign = text.align_right)
+        zones.push(Zone.new(zTop, zBot, 1, support, b))
+        // Buang zona paling lama bila melebihi batas
+        if zones.size() > maxZones
+            old = zones.shift()
+            old.bx.delete()
+
+// ----------------------------------------------------------------- Logic ----
+w = atr * zoneMult
+
+if not na(ph) and not na(w)
+    addZone(ph, ph - w, false)
+
+if not na(pl) and not na(w)
+    addZone(pl + w, pl, true)
+
+// Perbarui peran, tampilan, dan posisi setiap zona
+if zones.size() > 0
+    for z in zones
+        if close > z.top
+            z.isSupport := true
+        else if close < z.bot
+            z.isSupport := false
+
+        visible = z.touches >= minTouches
+        col     = z.isSupport ? supColor : resColor
+        z.bx.set_top(z.top)
+        z.bx.set_bottom(z.bot)
+        z.bx.set_bgcolor(visible ? col : color.new(col, 100))
+        if not extendZone
+            z.bx.set_right(bar_index)
+        z.bx.set_text(showLabel and visible ? (z.isSupport ? "S" : "R") + " x" + str.tostring(z.touches) : "")
+        z.bx.set_text_color(visible ? color.new(col, 0) : color.new(col, 100))
+
+// ---------------------------------------------------------------- Alerts ----
+bool inSupport    = false
+bool inResistance = false
+if zones.size() > 0
+    for z in zones
+        if z.touches >= minTouches and high >= z.bot and low <= z.top
+            if z.isSupport
+                inSupport := true
+            else
+                inResistance := true
+
+alertcondition(inSupport,    "Harga di Area Support",    "Harga menyentuh area SUPPORT pada {{ticker}} ({{close}})")
+alertcondition(inResistance, "Harga di Area Resistance", "Harga menyentuh area RESISTANCE pada {{ticker}} ({{close}})")
