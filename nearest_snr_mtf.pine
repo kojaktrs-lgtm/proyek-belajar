@@ -1,0 +1,202 @@
+//@version=6
+// ============================================================================
+//  Nearest Support & Resistance - Multi Timeframe
+//  ----------------------------------------------------------------------------
+//  Menampilkan SUPPORT dan RESISTANCE TERDEKAT dari harga saat ini untuk
+//  timeframe chart dan timeframe yang lebih besar (M5 s/d Weekly).
+//
+//  Cara hitung:
+//   1. Setiap pivot high dan pivot low (Wick atau Body) disimpan sebagai level
+//      harga di "memori" masing-masing timeframe.
+//   2. Setiap candle, dari semua level yang tersimpan dicari:
+//        - Resistance = level TERENDAH yang berada DI ATAS harga close
+//        - Support    = level TERTINGGI yang berada DI BAWAH harga close
+//   3. Karena dihitung terhadap harga, level yang ditembus otomatis berganti
+//      peran (resistance yang ditembus ke atas menjadi support, dan sebaliknya).
+//   4. Data timeframe besar diambil dari candle yang sudah close (tidak repaint).
+//
+//  Catatan: timeframe yang lebih kecil atau sama dengan timeframe chart
+//  otomatis tidak ditampilkan (gunakan opsi "Timeframe Chart" untuk itu).
+// ============================================================================
+indicator("Nearest Support & Resistance MTF", shorttitle = "Nearest SnR", overlay = true,
+     max_labels_count = 100)
+
+// ---------------------------------------------------------------- Inputs ----
+pivLen     = input.int(15, "Panjang Pivot", minval = 2)
+srcType    = input.string("Body", "Sumber Pivot", options = ["Wick", "Body"],
+     tooltip = "Wick = memakai high/low. Body = memakai badan candle (max/min dari open dan close).")
+keepLevels = input.int(50, "Jumlah Level Disimpan per TF", minval = 2, maxval = 500,
+     tooltip = "Berapa banyak pivot terakhir yang dipakai untuk mencari support/resistance terdekat.")
+
+grpTf  = "Timeframe"
+showC  = input.bool(true,  "Timeframe Chart", group = grpTf)
+show5  = input.bool(false, "M5",     group = grpTf)
+show15 = input.bool(false, "M15",    group = grpTf)
+show30 = input.bool(false, "M30",    group = grpTf)
+show1h = input.bool(false, "H1",     group = grpTf)
+show4h = input.bool(false, "H4",     group = grpTf)
+showD  = input.bool(false, "Daily",  group = grpTf)
+showW  = input.bool(false, "Weekly", group = grpTf)
+
+grpStyle  = "Tampilan"
+resColor  = input.color(#ff0040, "Warna Resistance", group = grpStyle)
+supColor  = input.color(#6aff00, "Warna Support",    group = grpStyle)
+showLabel = input.bool(true, "Label di Ujung Kanan", group = grpStyle)
+showTable = input.bool(true, "Tabel Ringkasan",      group = grpStyle)
+tablePos  = input.string("Kanan Atas", "Posisi Tabel", options = ["Kanan Atas", "Kanan Bawah", "Kiri Atas", "Kiri Bawah"], group = grpStyle)
+
+useWick = srcType == "Wick"
+
+// ----------------------------------------------------------------- Types ----
+type SRSet
+    string       name
+    bool         enabled
+    array<float> levels
+    float        res
+    float        sup
+
+newSet(string name, bool enabled) =>
+    SRSet.new(name, enabled, array.new<float>(), na, na)
+
+// --------------------------------------------------------------- Helpers ----
+// Pivot high/low dari sumber Wick atau Body. `delay` = 1 untuk data HTF
+// (diambil dari candle HTF yang sudah close sehingga tidak repaint).
+pivotData(int len, bool wick, int delay) =>
+    float hiSrc = wick ? high : math.max(open, close)
+    float loSrc = wick ? low  : math.min(open, close)
+    float ph = ta.pivothigh(hiSrc, len, len)
+    float pl = ta.pivotlow(loSrc, len, len)
+    [ph[delay], pl[delay]]
+
+htfPivots(string tf) =>
+    request.security(syminfo.tickerid, tf, pivotData(pivLen, useWick, 1), lookahead = barmerge.lookahead_on)
+
+isHigherTf(string tf) =>
+    timeframe.in_seconds(tf) > timeframe.in_seconds(timeframe.period)
+
+// Simpan pivot baru lalu cari support & resistance terdekat dari harga close.
+updateSet(SRSet s, float ph, float pl, bool isNew) =>
+    if s.enabled
+        if isNew
+            if not na(ph)
+                s.levels.push(ph)
+            if not na(pl)
+                s.levels.push(pl)
+            while s.levels.size() > keepLevels
+                s.levels.shift()
+        float nearRes = na
+        float nearSup = na
+        for lvl in s.levels
+            if lvl > close and (na(nearRes) or lvl < nearRes)
+                nearRes := lvl
+            if lvl < close and (na(nearSup) or lvl > nearSup)
+                nearSup := lvl
+        s.res := nearRes
+        s.sup := nearSup
+
+// ------------------------------------------------------------------ Data ----
+var SRSet sC  = newSet("Chart",  showC)
+var SRSet s5  = newSet("M5",     show5  and isHigherTf("5"))
+var SRSet s15 = newSet("M15",    show15 and isHigherTf("15"))
+var SRSet s30 = newSet("M30",    show30 and isHigherTf("30"))
+var SRSet s1h = newSet("H1",     show1h and isHigherTf("60"))
+var SRSet s4h = newSet("H4",     show4h and isHigherTf("240"))
+var SRSet sD  = newSet("D",      showD  and isHigherTf("D"))
+var SRSet sW  = newSet("W",      showW  and isHigherTf("W"))
+var array<SRSet> sets = array.from(sC, s5, s15, s30, s1h, s4h, sD, sW)
+
+[phC,  plC ] = pivotData(pivLen, useWick, 0)
+[ph5,  pl5 ] = htfPivots("5")
+[ph15, pl15] = htfPivots("15")
+[ph30, pl30] = htfPivots("30")
+[ph1h, pl1h] = htfPivots("60")
+[ph4h, pl4h] = htfPivots("240")
+[phD,  plD ] = htfPivots("D")
+[phW,  plW ] = htfPivots("W")
+
+updateSet(sC,  phC,  plC,  true)
+updateSet(s5,  ph5,  pl5,  timeframe.change("5"))
+updateSet(s15, ph15, pl15, timeframe.change("15"))
+updateSet(s30, ph30, pl30, timeframe.change("30"))
+updateSet(s1h, ph1h, pl1h, timeframe.change("60"))
+updateSet(s4h, ph4h, pl4h, timeframe.change("240"))
+updateSet(sD,  phD,  plD,  timeframe.change("D"))
+updateSet(sW,  phW,  plW,  timeframe.change("W"))
+
+// ----------------------------------------------------------------- Plots ----
+// Garis diputus setiap kali level terdekat berganti agar tidak ada garis miring.
+lineColor(float v, color c) =>
+    v != v[1] ? na : c
+
+plot(sC.res,  "Resistance Chart", lineColor(sC.res,  resColor), 2, plot.style_linebr)
+plot(sC.sup,  "Support Chart",    lineColor(sC.sup,  supColor), 2, plot.style_linebr)
+plot(s5.res,  "Resistance M5",    lineColor(s5.res,  color.new(resColor, 60)), 1, plot.style_linebr)
+plot(s5.sup,  "Support M5",       lineColor(s5.sup,  color.new(supColor, 60)), 1, plot.style_linebr)
+plot(s15.res, "Resistance M15",   lineColor(s15.res, color.new(resColor, 50)), 1, plot.style_linebr)
+plot(s15.sup, "Support M15",      lineColor(s15.sup, color.new(supColor, 50)), 1, plot.style_linebr)
+plot(s30.res, "Resistance M30",   lineColor(s30.res, color.new(resColor, 40)), 2, plot.style_linebr)
+plot(s30.sup, "Support M30",      lineColor(s30.sup, color.new(supColor, 40)), 2, plot.style_linebr)
+plot(s1h.res, "Resistance H1",    lineColor(s1h.res, color.new(resColor, 30)), 2, plot.style_linebr)
+plot(s1h.sup, "Support H1",       lineColor(s1h.sup, color.new(supColor, 30)), 2, plot.style_linebr)
+plot(s4h.res, "Resistance H4",    lineColor(s4h.res, color.new(resColor, 20)), 3, plot.style_linebr)
+plot(s4h.sup, "Support H4",       lineColor(s4h.sup, color.new(supColor, 20)), 3, plot.style_linebr)
+plot(sD.res,  "Resistance Daily", lineColor(sD.res,  color.new(resColor, 10)), 3, plot.style_linebr)
+plot(sD.sup,  "Support Daily",    lineColor(sD.sup,  color.new(supColor, 10)), 3, plot.style_linebr)
+plot(sW.res,  "Resistance Weekly", lineColor(sW.res, resColor), 4, plot.style_linebr)
+plot(sW.sup,  "Support Weekly",    lineColor(sW.sup, supColor), 4, plot.style_linebr)
+
+// ---------------------------------------------------- Label & Tabel -------
+distPct(float lvl) =>
+    na(lvl) ? "-" : str.tostring((lvl - close) / close * 100, "0.00") + "%"
+
+priceStr(float lvl) =>
+    na(lvl) ? "-" : str.tostring(lvl, format.mintick)
+
+var array<label> labels = array.new<label>()
+
+pos = switch tablePos
+    "Kanan Bawah" => position.bottom_right
+    "Kiri Atas"   => position.top_left
+    "Kiri Bawah"  => position.bottom_left
+    => position.top_right
+var table tbl = table.new(pos, 5, 9, bgcolor = color.new(color.black, 20), border_width = 1, border_color = color.new(color.gray, 60))
+
+if barstate.islast
+    // Label
+    for lb in labels
+        lb.delete()
+    labels.clear()
+    if showLabel
+        for s in sets
+            if s.enabled
+                if not na(s.res)
+                    labels.push(label.new(bar_index + 3, s.res, "R " + s.name + "  " + priceStr(s.res),
+                         style = label.style_label_left, color = color.new(resColor, 80), textcolor = resColor, size = size.small))
+                if not na(s.sup)
+                    labels.push(label.new(bar_index + 3, s.sup, "S " + s.name + "  " + priceStr(s.sup),
+                         style = label.style_label_left, color = color.new(supColor, 80), textcolor = supColor, size = size.small))
+
+    // Tabel
+    table.clear(tbl, 0, 0, 4, 8)
+    if showTable
+        txt = color.white
+        table.cell(tbl, 0, 0, "TF",         text_color = txt, text_size = size.small)
+        table.cell(tbl, 1, 0, "Resistance", text_color = resColor, text_size = size.small)
+        table.cell(tbl, 2, 0, "Jarak",      text_color = txt, text_size = size.small)
+        table.cell(tbl, 3, 0, "Support",    text_color = supColor, text_size = size.small)
+        table.cell(tbl, 4, 0, "Jarak",      text_color = txt, text_size = size.small)
+        row = 1
+        for s in sets
+            if s.enabled
+                table.cell(tbl, 0, row, s.name,         text_color = txt,      text_size = size.small)
+                table.cell(tbl, 1, row, priceStr(s.res), text_color = resColor, text_size = size.small)
+                table.cell(tbl, 2, row, distPct(s.res),  text_color = txt,      text_size = size.small)
+                table.cell(tbl, 3, row, priceStr(s.sup), text_color = supColor, text_size = size.small)
+                table.cell(tbl, 4, row, distPct(s.sup),  text_color = txt,      text_size = size.small)
+                row += 1
+
+// ---------------------------------------------------------------- Alerts ----
+float chartRes = sC.res
+float chartSup = sC.sup
+alertcondition(not na(chartRes[1]) and close > chartRes[1], "Break Resistance Terdekat", "{{ticker}} menembus resistance terdekat ({{close}})")
+alertcondition(not na(chartSup[1]) and close < chartSup[1], "Break Support Terdekat",    "{{ticker}} menembus support terdekat ({{close}})")
