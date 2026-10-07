@@ -2,6 +2,7 @@
 // Berdasarkan "Multi Timeframe Support and Resistance" © SUAR PRO
 // Modifikasi:
 //  - SnR dihitung dari level TERDEKAT terhadap harga (bukan sekadar pivot terakhir)
+//  - Support yang sudah terinjak & resistance yang sudah ditembus dihapus
 //  - Mode Body memakai badan candle (max/min dari open & close)
 //  - Data timeframe besar tidak repaint (candle HTF yang sudah close)
 //  - Timeframe yang lebih kecil / sama dengan chart dilewati (datanya tidak akurat)
@@ -15,6 +16,8 @@ bars      = input.int(15, title = "Pivot", minval = 1)
 tipe      = input.string("Body", title = "Type", options = ["Wick", "Body"])
 keep      = input.int(50, title = "Jumlah Level Disimpan", minval = 2, maxval = 500,
      tooltip = "Jumlah pivot terakhir (high & low) per timeframe yang dipakai untuk mencari support dan resistance terdekat.")
+hapus     = input.string("Tersentuh", title = "Hapus Level Jika", options = ["Tersentuh", "Ditembus Close"],
+     tooltip = "Tersentuh = level dihapus begitu harga menyentuhnya (Type Wick: high/low, Type Body: badan candle). Ditembus Close = level dihapus jika candle close melewatinya.")
 
 show_c    = input.bool(true,  title = "Current Timeframe", group = "Timeframes")
 show_5m   = input.bool(false, title = "M5",     group = "Timeframes")
@@ -43,27 +46,49 @@ is_higher(string tf) =>
 htf_pivots(string tf) =>
     request.security(syminfo.tickerid, tf, pivots(bars, use_wick, 1), lookahead = barmerge.lookahead_on)
 
-// Simpan pivot ke memori, lalu cari:
-//   resistance = level terendah DI ATAS harga
-//   support    = level tertinggi DI BAWAH harga
+// Resistance (dari pivot high) dan support (dari pivot low) disimpan terpisah.
+// Resistance yang ditembus / support yang terinjak langsung dihapus dari memori.
+// Dari level yang tersisa dicari yang TERDEKAT dengan harga:
+//   resistance = level terendah, support = level tertinggi.
 // Setiap pemanggilan fungsi punya memori (var) sendiri, jadi tiap timeframe terpisah.
 nearest_snr(float ph, float pl, bool is_new, bool enabled) =>
-    var levels = array.new_float()
+    var res_levels = array.new_float()
+    var sup_levels = array.new_float()
     float res = na
     float sup = na
     if enabled
         if is_new
             if not na(ph)
-                array.push(levels, ph)
+                array.push(res_levels, ph)
             if not na(pl)
-                array.push(levels, pl)
-            while array.size(levels) > keep
-                array.shift(levels)
-        for lvl in levels
-            if lvl > close and (na(res) or lvl < res)
-                res := lvl
-            if lvl < close and (na(sup) or lvl > sup)
-                sup := lvl
+                array.push(sup_levels, pl)
+            while array.size(res_levels) > keep
+                array.shift(res_levels)
+            while array.size(sup_levels) > keep
+                array.shift(sup_levels)
+
+        bool  by_touch  = hapus == "Tersentuh"
+        float top_price = by_touch ? (use_wick ? high : math.max(open, close)) : close
+        float bot_price = by_touch ? (use_wick ? low  : math.min(open, close)) : close
+
+        // Loop mundur supaya aman saat menghapus elemen array
+        if array.size(res_levels) > 0
+            for i = array.size(res_levels) - 1 to 0
+                lvl = array.get(res_levels, i)
+                broken = by_touch ? top_price >= lvl : top_price > lvl
+                if broken
+                    array.remove(res_levels, i)
+                else if na(res) or lvl < res
+                    res := lvl
+
+        if array.size(sup_levels) > 0
+            for i = array.size(sup_levels) - 1 to 0
+                lvl = array.get(sup_levels, i)
+                broken = by_touch ? bot_price <= lvl : bot_price < lvl
+                if broken
+                    array.remove(sup_levels, i)
+                else if na(sup) or lvl > sup
+                    sup := lvl
     [res, sup]
 
 [ph_c,   pl_c  ] = pivots(bars, use_wick, 0)
