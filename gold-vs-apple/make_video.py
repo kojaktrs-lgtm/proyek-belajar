@@ -25,7 +25,9 @@ OUT_DIR = HERE / "output"
 
 # ---------------------------------------------------------------- settings
 W, H, FPS = 1080, 1920, 30
-INTRO, RACE, FINALE, LOOP_FADE = 3.0, 22.0, 6.5, 0.6   # INTRO = 3-2-1 countdown
+# INTRO = 3-2-1 countdown. FINALE ends right as the question finishes appearing,
+# so the loop cross-fade starts immediately (no frozen frames at the end).
+INTRO, RACE, FINALE, LOOP_FADE = 3.0, 22.0, 3.6, 0.8
 TOTAL = INTRO + RACE + FINALE
 N_FRAMES = int(round(TOTAL * FPS))
 
@@ -298,7 +300,7 @@ class Renderer:
         card(0.9, 0.475, "GOLD", GOLD, vg, not win_apple)
         card(1.5, 0.62, "APPLE", APPLE, va, win_apple)
 
-        qa = ease_out((ft - 3.0) / 0.5)
+        qa = ease_out((ft - 2.3) / 0.5)
         if qa > 0:
             fig.text(0.5, 0.345, "Which one would you pick?", color=TEXT, fontsize=50,
                      fontweight="heavy", ha="center", va="center", alpha=qa, zorder=7)
@@ -463,7 +465,7 @@ def main():
 
     if args.preview:
         wanted = {0: "intro", int(1.1 * FPS): "count2", int(2.5 * FPS): "count1", int(9 * FPS): "mid", int(22 * FPS): "late",
-                  int((INTRO + RACE + 4.5) * FPS): "finale"}
+                  int((INTRO + RACE + 2.8) * FPS): "finale"}
         for k in range(max(wanted) + 1):
             img = r.frame(k)
             if k in wanted:
@@ -486,7 +488,8 @@ def main():
     for k in range(N_FRAMES):
         img = r.frame(k)
         if k >= fade_start:  # cross-fade back to frame 0 so the short loops cleanly
-            a = (k - fade_start + 1) / (N_FRAMES - fade_start)
+            # never reaches 1: frame 0 of the next play is the last step (no duplicate frame)
+            a = (k - fade_start + 1) / (N_FRAMES - fade_start + 1)
             img = (img * (1 - a) + first * a).astype(np.uint8)
         proc.stdin.write(img.tobytes())
         if k % 90 == 0:
