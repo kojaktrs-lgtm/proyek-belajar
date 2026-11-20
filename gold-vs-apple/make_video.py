@@ -41,6 +41,9 @@ ACCENT_UP, ACCENT_DOWN = "#3ddc84", "#ff5c5c"
 AX_PX = (70, 520, 940, 860)
 TIP_FRAC = 0.70          # where the arrow tips sit horizontally inside the axes
 
+TITLE_PARTS = [("GOLD", GOLD, 92, "heavy"), ("vs", MUTED, 52, "bold"), ("APPLE", APPLE, 92, "heavy")]
+TITLE_GAP = 34  # px between title words
+
 EVENTS = [  # (show from, show until, caption)  -- all visible in the data
     ("2019-01-03", "2019-04-20", "Late 2018: Apple drops 38%"),   # trough 2019-01-03
     ("2020-02-24", "2020-06-10", "2020: COVID crash"),
@@ -94,6 +97,18 @@ class Renderer:
         self.events = [(np.datetime64(s).astype(float), np.datetime64(e).astype(float), c)
                        for s, e, c in EVENTS]
         self.fig = plt.figure(figsize=(W / 100, H / 100), dpi=100, facecolor=BG)
+        self.measure_title()
+
+    def measure_title(self):
+        """Measure each title word so the whole "GOLD vs APPLE" line is truly centred."""
+        rend = self.fig.canvas.get_renderer()
+        self.title_w = []
+        for txt, _col, size, weight in TITLE_PARTS:
+            t = self.fig.text(0, 0, txt, fontsize=size, fontweight=weight)
+            self.title_w.append(t.get_window_extent(rend).width)
+            t.remove()
+        total = sum(self.title_w) + TITLE_GAP * (len(TITLE_PARTS) - 1)
+        self.title_x0 = (W - total) / 2
 
     # value at fractional index
     def at(self, arr, f):
@@ -209,12 +224,11 @@ class Renderer:
                          fontweight="heavy", va="center", alpha=1 - finale)
 
         # ---- header
-        fig.text(0.415, 1 - 175 / H, "GOLD", color=GOLD, fontsize=92, fontweight="heavy",
-                 ha="right", va="center")
-        fig.text(0.5, 1 - 175 / H, "vs", color=MUTED, fontsize=52, fontweight="bold",
-                 ha="center", va="center")
-        fig.text(0.585, 1 - 175 / H, "APPLE", color=APPLE, fontsize=92, fontweight="heavy",
-                 ha="left", va="center")
+        x = self.title_x0
+        for (txt, col, size, weight), w in zip(TITLE_PARTS, self.title_w):
+            fig.text(x / W, 1 - 175 / H, txt, color=col, fontsize=size, fontweight=weight,
+                     ha="left", va="center")
+            x += w + TITLE_GAP
         fig.text(0.5, 1 - 285 / H, "$1,000 invested in Nov 2016", color=TEXT, fontsize=42,
                  fontweight="semibold", ha="center", va="center")
         date_str = pd.Timestamp(np.datetime64(int(cur_d), "D")).strftime("%b %Y")
