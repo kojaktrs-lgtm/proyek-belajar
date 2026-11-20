@@ -15,7 +15,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
-from matplotlib.patches import FancyBboxPatch, Polygon
+from matplotlib.patches import Arc, Circle, FancyBboxPatch, Polygon
 from matplotlib.transforms import IdentityTransform
 import numpy as np
 import pandas as pd
@@ -25,7 +25,7 @@ OUT_DIR = HERE / "output"
 
 # ---------------------------------------------------------------- settings
 W, H, FPS = 1080, 1920, 30
-INTRO, RACE, FINALE, LOOP_FADE = 1.0, 22.0, 6.5, 0.6
+INTRO, RACE, FINALE, LOOP_FADE = 3.0, 22.0, 6.5, 0.6   # INTRO = 3-2-1 countdown
 TOTAL = INTRO + RACE + FINALE
 N_FRAMES = int(round(TOTAL * FPS))
 
@@ -169,8 +169,9 @@ class Renderer:
 
         # big faded year watermark
         year = str(int(np.datetime64(int(cur_d), "D").astype("datetime64[Y]").astype(int) + 1970))
-        ax.text(0.5, 0.45, year, transform=ax.transAxes, ha="center", va="center",
-                fontsize=250, fontweight="bold", color=TEXT, alpha=0.06, zorder=0)
+        if t >= INTRO:
+            ax.text(0.5, 0.45, year, transform=ax.transAxes, ha="center", va="center",
+                    fontsize=250, fontweight="bold", color=TEXT, alpha=0.06, zorder=0)
 
         # $1,000 baseline
         ax.axhline(1000, color=MUTED, lw=2, ls=(0, (6, 6)), alpha=0.5, zorder=1)
@@ -248,6 +249,10 @@ class Renderer:
         fig.text(0.5, 425 / H, "Past performance is no guarantee of future results. Not financial advice.",
                  color="#5b6070", fontsize=17, ha="center", va="center")
 
+        # ---- 3-2-1 countdown before the race starts
+        if t < INTRO:
+            draw_countdown(fig, t)
+
         # ---- finale overlay
         if t >= INTRO + RACE:
             self.draw_finale(fig, t - INTRO - RACE, ya[-1], yg[-1])
@@ -299,6 +304,24 @@ class Renderer:
                      fontweight="heavy", ha="center", va="center", alpha=qa, zorder=7)
             fig.text(0.5, 0.305, "Comment GOLD or APPLE", color=MUTED, fontsize=34,
                      fontweight="semibold", ha="center", va="center", alpha=qa, zorder=7)
+
+
+def draw_countdown(fig, t):
+    """Big 3 / 2 / 1 with a draining ring, centred on the chart area."""
+    n = int(INTRO - math.floor(t))          # 3, 2, 1
+    u = t - math.floor(t)                   # 0..1 within this number
+    cx, cy = W / 2, AX_PX[1] + AX_PX[3] * 0.52
+    pop = ease_out(u / 0.25)
+    scale = 1.35 - 0.35 * pop
+    alpha = pop * (1 - clamp((u - 0.82) / 0.18))
+    r = 145  # small enough that the waiting arrows at the right stay visible
+    fig.patches.append(Circle((cx, cy), r, transform=IdentityTransform(), fill=False,
+                              ec=GRID, lw=10, alpha=alpha, zorder=12))
+    col = (GOLD, APPLE, ACCENT_UP)[3 - n]
+    fig.patches.append(Arc((cx, cy), 2 * r, 2 * r, theta1=90, theta2=90 + 360 * (1 - u) + 1e-3,
+                           transform=IdentityTransform(), ec=col, lw=10, alpha=alpha, zorder=13))
+    fig.text(cx / W, cy / H, str(n), color=TEXT, fontsize=175 * scale, fontweight="heavy",
+             ha="center", va="center_baseline", alpha=alpha, zorder=14)
 
 
 def money_short(v, _pos=None):
@@ -389,6 +412,15 @@ def make_audio(path, renderer):
         x = np.arange(m) / sr
         add(0.22 * np.sin(2 * np.pi * 1760 * x) * np.exp(-x * 40), at)
 
+    # countdown beeps (3, 2, 1) and a higher "go" beep when the race starts
+    for i in range(int(INTRO)):
+        m = int(0.18 * sr)
+        x = np.arange(m) / sr
+        add(0.35 * np.sin(2 * np.pi * 880 * x) * np.exp(-x * 14), float(i))
+    m = int(0.45 * sr)
+    x = np.arange(m) / sr
+    add(0.4 * np.sin(2 * np.pi * 1760 * x) * np.exp(-x * 7), INTRO)
+
     # riser into the finale
     rs, rd = race_end - 2.0, 2.0
     m = int(rd * sr)
@@ -430,7 +462,7 @@ def main():
     r = Renderer()
 
     if args.preview:
-        wanted = {0: "intro", int(9 * FPS): "mid", int(22 * FPS): "late",
+        wanted = {0: "intro", int(1.1 * FPS): "count2", int(2.5 * FPS): "count1", int(9 * FPS): "mid", int(22 * FPS): "late",
                   int((INTRO + RACE + 4.5) * FPS): "finale"}
         for k in range(max(wanted) + 1):
             img = r.frame(k)

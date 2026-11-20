@@ -1,6 +1,6 @@
 # Gold vs Apple — $1,000, 10 years (vertical short)
 
-Line-race video (1080×1920, 30 fps, ~30 s, with generated music/SFX) comparing
+Line-race video (1080×1920, 30 fps, ~31 s: 3-2-1 countdown, race, results; generated music/SFX) comparing
 $1,000 invested in gold (GLD ETF) vs Apple (AAPL, dividends reinvested) from
 Nov 21, 2016 to Nov 19, 2026.
 
