@@ -11,8 +11,12 @@ pip install matplotlib pandas numpy
 python fetch_data.py         # refresh data/prices.csv
 python make_video.py --preview   # still frames for checking the layout
 python make_video.py         # -> output/gold_vs_apple.mp4
+python check_safe_zone.py    # verify nothing sits under TikTok/Shorts UI
 ```
 
 Data: daily closes from the public `alm0421/alm0421` GitHub dataset,
 cross-checked against two independent sources. Event captions in
 `make_video.py` (`EVENTS`) only appear once the event is true in the data.
+
+Layout keeps everything inside the TikTok/Shorts safe zone (constants `SAFE_*`,
+`BTN_X`, `BTN_Y` in `make_video.py`), measured from a real TikTok screenshot.

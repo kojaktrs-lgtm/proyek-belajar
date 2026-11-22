@@ -39,12 +39,23 @@ GOLD = "#f7c548"
 APPLE = "#dfe4ee"
 ACCENT_UP, ACCENT_DOWN = "#3ddc84", "#ff5c5c"
 
-# axes rectangle in pixels (left, bottom, width, height), origin bottom-left
-AX_PX = (70, 520, 940, 860)
-TIP_FRAC = 0.70          # where the arrow tips sit horizontally inside the axes
+# ---- TikTok / Shorts safe zone (pixels from the TOP-left of the 1080x1920 frame).
+# Measured from a real TikTok screenshot: phones taller than 9:16 crop ~52 px per side,
+# the search bar covers the top ~225 px, the like/comment column sits at x >= ~900 from
+# y ~1050 down, and the caption starts at y ~1630.
+SAFE_LEFT, SAFE_RIGHT, SAFE_TOP, SAFE_BOTTOM = 80, 1000, 240, 1600
+BTN_X, BTN_Y = 880, 980      # keep x <= BTN_X for anything below y = BTN_Y
 
-TITLE_PARTS = [("GOLD", GOLD, 92, "heavy"), ("vs", MUTED, 52, "bold"), ("APPLE", APPLE, 92, "heavy")]
-TITLE_GAP = 34  # px between title words
+# vertical positions (from top)
+TITLE_Y, SUB_Y, DATE_Y, PILL_Y = 315, 410, 470, 552
+FOOTER_Y = (1482, 1510, 1538)
+
+# axes rectangle in pixels (left, bottom, width, height), origin bottom-left
+AX_PX = (100, H - 1420, 770, 1420 - 625)
+TIP_FRAC = 0.60          # where the arrow tips sit horizontally inside the axes
+
+TITLE_PARTS = [("GOLD", GOLD, 80, "heavy"), ("vs", MUTED, 46, "bold"), ("APPLE", APPLE, 80, "heavy")]
+TITLE_GAP = 30  # px between title words
 
 EVENTS = [  # (show from, show until, caption)  -- all visible in the data
     ("2019-01-03", "2019-04-20", "Late 2018: Apple drops 38%"),   # trough 2019-01-03
@@ -229,27 +240,26 @@ class Renderer:
         # ---- header
         x = self.title_x0
         for (txt, col, size, weight), w in zip(TITLE_PARTS, self.title_w):
-            fig.text(x / W, 1 - 175 / H, txt, color=col, fontsize=size, fontweight=weight,
+            fig.text(x / W, 1 - TITLE_Y / H, txt, color=col, fontsize=size, fontweight=weight,
                      ha="left", va="center")
             x += w + TITLE_GAP
-        fig.text(0.5, 1 - 285 / H, "$1,000 invested in Nov 2016", color=TEXT, fontsize=42,
+        fig.text(0.5, 1 - SUB_Y / H, "$1,000 invested in Nov 2016", color=TEXT, fontsize=40,
                  fontweight="semibold", ha="center", va="center")
         date_str = pd.Timestamp(np.datetime64(int(cur_d), "D")).strftime("%b %Y")
-        fig.text(0.5, 1 - 352 / H, date_str.upper(), color=MUTED, fontsize=34,
+        fig.text(0.5, 1 - DATE_Y / H, date_str.upper(), color=MUTED, fontsize=32,
                  fontweight="bold", ha="center", va="center")
 
         # ---- event caption
         for s, e, cap in self.events:
             if s <= cur_d <= e and finale == 0:
                 fade = clamp(min(cur_d - s, e - cur_d) / 18)
-                pill(fig, 0.5, 1 - 445 / H, cap, fade)
+                pill(fig, 0.5, 1 - PILL_Y / H, cap, fade)
 
         # ---- footer
-        fig.text(0.5, 455 / H,
-                 "Daily closes · Nov 21, 2016 – Nov 19, 2026 · Gold = GLD ETF · Apple incl. reinvested dividends",
-                 color="#5b6070", fontsize=17, ha="center", va="center")
-        fig.text(0.5, 425 / H, "Past performance is no guarantee of future results. Not financial advice.",
-                 color="#5b6070", fontsize=17, ha="center", va="center")
+        for y, line in zip(FOOTER_Y, ("Daily closes · Nov 21, 2016 – Nov 19, 2026",
+                                      "Gold = GLD ETF · Apple incl. reinvested dividends",
+                                      "Past performance ≠ future results · Not financial advice")):
+            fig.text(0.5, 1 - y / H, line, color="#6b7080", fontsize=18, ha="center", va="center")
 
         # ---- 3-2-1 countdown before the race starts
         if t < INTRO:
@@ -265,7 +275,7 @@ class Renderer:
 
     def draw_finale(self, fig, ft, va, vg):
         ov = clamp(ft / 0.6)
-        fig.patches.append(FancyBboxPatch((0, 0.258), 1, 0.50, boxstyle="square,pad=0",
+        fig.patches.append(FancyBboxPatch((0, 1 - 1450 / H), 1, (1450 - 600) / H, boxstyle="square,pad=0",
                                           transform=fig.transFigure, fc=BG, ec="none",
                                           alpha=0.9 * ov, zorder=5))
 
@@ -274,18 +284,21 @@ class Renderer:
             if a <= 0:
                 return
             dy = (1 - a) * 40 / H
-            box = FancyBboxPatch((0.09, y - 0.058 - dy), 0.82, 0.116,
+            # cards are centred and end at BTN_X so TikTok's buttons never cover them
+            x1 = (BTN_X - 14) / W            # 14 px margin for the border stroke
+            x0 = 1 - x1                      # symmetric around the centre
+            box = FancyBboxPatch((x0, y - 0.058 - dy), x1 - x0, 0.116,
                                  boxstyle="round,pad=0,rounding_size=0.02",
                                  transform=fig.transFigure, fc="#11131b",
                                  ec=col, lw=4 if winner else 2, alpha=a, zorder=6,
                                  mutation_aspect=W / H)
             fig.patches.append(box)
             pct = (val / 1000 - 1) * 100
-            fig.text(0.13, y + 0.022 - dy, name, color=col, fontsize=40, fontweight="heavy",
+            fig.text(x0 + 0.035, y + 0.022 - dy, name, color=col, fontsize=40, fontweight="heavy",
                      va="center", alpha=a, zorder=7)
-            fig.text(0.13, y - 0.022 - dy, f"+{pct:,.0f}%", color=ACCENT_UP, fontsize=34,
+            fig.text(x0 + 0.035, y - 0.022 - dy, f"+{pct:,.0f}%", color=ACCENT_UP, fontsize=34,
                      fontweight="bold", va="center", alpha=a, zorder=7)
-            fig.text(0.87, y - dy, f"${val:,.0f}", color=TEXT, fontsize=78, fontweight="heavy",
+            fig.text(x1 - 0.035, y - dy, f"${val:,.0f}", color=TEXT, fontsize=64, fontweight="heavy",
                      ha="right", va="center", alpha=a, zorder=7)
             if winner:
                 wa = ease_out((ft - appear - 0.6) / 0.35)
@@ -297,14 +310,14 @@ class Renderer:
                                        ec="none", alpha=wa))
 
         win_apple = va >= vg
-        card(0.9, 0.475, "GOLD", GOLD, vg, not win_apple)
-        card(1.5, 0.62, "APPLE", APPLE, va, win_apple)
+        card(0.9, 1 - 1040 / H, "GOLD", GOLD, vg, not win_apple)
+        card(1.5, 1 - 770 / H, "APPLE", APPLE, va, win_apple)
 
         qa = ease_out((ft - 2.3) / 0.5)
         if qa > 0:
-            fig.text(0.5, 0.345, "Which one would you pick?", color=TEXT, fontsize=50,
+            fig.text(0.5, 1 - 1275 / H, "Which one would you pick?", color=TEXT, fontsize=34,
                      fontweight="heavy", ha="center", va="center", alpha=qa, zorder=7)
-            fig.text(0.5, 0.305, "Comment GOLD or APPLE", color=MUTED, fontsize=34,
+            fig.text(0.5, 1 - 1345 / H, "Comment GOLD or APPLE", color=MUTED, fontsize=28,
                      fontweight="semibold", ha="center", va="center", alpha=qa, zorder=7)
 
 
@@ -312,17 +325,17 @@ def draw_countdown(fig, t):
     """Big 3 / 2 / 1 with a draining ring, centred on the chart area."""
     n = int(INTRO - math.floor(t))          # 3, 2, 1
     u = t - math.floor(t)                   # 0..1 within this number
-    cx, cy = W / 2, AX_PX[1] + AX_PX[3] * 0.52
+    cx, cy = W / 2, AX_PX[1] + AX_PX[3] * 0.80   # above the $1,000 start line
     pop = ease_out(u / 0.25)
     scale = 1.35 - 0.35 * pop
     alpha = pop * (1 - clamp((u - 0.82) / 0.18))
-    r = 145  # small enough that the waiting arrows at the right stay visible
+    r = 125  # small enough that the waiting arrows and $1,000 tags stay visible
     fig.patches.append(Circle((cx, cy), r, transform=IdentityTransform(), fill=False,
                               ec=GRID, lw=10, alpha=alpha, zorder=12))
     col = (GOLD, APPLE, ACCENT_UP)[3 - n]
     fig.patches.append(Arc((cx, cy), 2 * r, 2 * r, theta1=90, theta2=90 + 360 * (1 - u) + 1e-3,
                            transform=IdentityTransform(), ec=col, lw=10, alpha=alpha, zorder=13))
-    fig.text(cx / W, cy / H, str(n), color=TEXT, fontsize=175 * scale, fontweight="heavy",
+    fig.text(cx / W, cy / H, str(n), color=TEXT, fontsize=150 * scale, fontweight="heavy",
              ha="center", va="center_baseline", alpha=alpha, zorder=14)
 
 
