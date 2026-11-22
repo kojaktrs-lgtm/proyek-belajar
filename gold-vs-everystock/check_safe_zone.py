@@ -2,6 +2,8 @@
 
 Also writes output/safezone_mock.png: key frames with the UI areas shaded red.
 """
+import sys
+
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -19,6 +21,7 @@ def unsafe_mask():
 
 
 def main():
+    mv.configure(sys.argv[1].upper() if len(sys.argv) > 1 else "AAPL")
     mask = unsafe_mask()
     r = mv.Renderer()
     shots, worst = {}, []
@@ -55,7 +58,7 @@ def main():
     sheet = Image.new("RGB", (4 * mv.W + 60, mv.H), (40, 40, 40))
     for i, t in enumerate(tiles):
         sheet.paste(t, (i * (mv.W + 20), 0))
-    sheet.resize((sheet.width // 3, sheet.height // 3)).save(mv.OUT_DIR / "safezone_mock.png")
+    sheet.resize((sheet.width // 3, sheet.height // 3)).save(mv.OUT_DIR / f"safezone_mock_{mv.TICKER.lower()}.png")
 
 
 if __name__ == "__main__":

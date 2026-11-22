@@ -1,8 +1,10 @@
-"""Render a vertical (1080x1920) line-race short: $1,000 in Gold vs Apple, 10 years.
+"""Render a vertical (1080x1920) line-race short: $1,000 in Gold vs a stock, 10 years.
 
 Usage:
-    python make_video.py            # full video -> output/gold_vs_apple.mp4
-    python make_video.py --preview  # a few still frames -> output/preview_*.png
+    python make_video.py NKE            # full video -> output/gold_vs_nke.mp4
+    python make_video.py NKE --preview  # a few still frames -> output/preview_*.png
+
+Stocks are configured in stocks.py (name, colour, event captions).
 """
 import argparse
 import math
@@ -20,6 +22,8 @@ from matplotlib.transforms import IdentityTransform
 import numpy as np
 import pandas as pd
 
+from stocks import STOCKS
+
 HERE = Path(__file__).parent
 OUT_DIR = HERE / "output"
 
@@ -36,7 +40,6 @@ GRID = "#1c1f2a"
 MUTED = "#8a8f9e"
 TEXT = "#f2f3f7"
 GOLD = "#f7c548"
-APPLE = "#dfe4ee"
 ACCENT_UP, ACCENT_DOWN = "#3ddc84", "#ff5c5c"
 
 # ---- TikTok / Shorts safe zone (pixels from the TOP-left of the 1080x1920 frame).
@@ -54,17 +57,20 @@ FOOTER_Y = (1536, 1561, 1586)   # small print sits at the very bottom of the saf
 AX_PX = (100, H - 1500, 770, 1500 - 625)
 TIP_FRAC = 0.60          # where the arrow tips sit horizontally inside the axes
 
-TITLE_PARTS = [("GOLD", GOLD, 80, "heavy"), ("vs", MUTED, 46, "bold"), ("APPLE", APPLE, 80, "heavy")]
 TITLE_GAP = 30  # px between title words
 
-EVENTS = [  # (show from, show until, caption)  -- all visible in the data
-    ("2019-01-03", "2019-04-20", "Late 2018: Apple drops 38%"),   # trough 2019-01-03
-    ("2020-02-24", "2020-06-10", "2020: COVID crash"),
-    ("2022-05-01", "2022-12-20", "2022: bear market"),
-    ("2025-04-03", "2025-07-10", "April 2025: tariff selloff"),
-    ("2026-01-29", "2026-04-30", "Jan 2026: gold hits record high"),  # GLD peak close
-    ("2026-06-01", "2026-11-19", "Gold pulls back from its record"),
-]
+# filled in by configure(ticker)
+TICKER = NAME = LABEL = STOCK = None
+TITLE_PARTS, EVENTS = [], []
+
+
+def configure(ticker):
+    """Select which stock races gold (see stocks.py)."""
+    global TICKER, NAME, LABEL, STOCK, TITLE_PARTS, EVENTS
+    cfg = STOCKS[ticker]
+    TICKER, NAME, LABEL, STOCK = ticker, cfg["name"], cfg["label"], cfg["color"]
+    TITLE_PARTS = [("GOLD", GOLD, 80, "heavy"), ("vs", MUTED, 46, "bold"), (NAME, STOCK, 80, "heavy")]
+    EVENTS = cfg["events"]
 
 
 def setup_fonts():
@@ -75,11 +81,11 @@ def setup_fonts():
 
 # ---------------------------------------------------------------- data
 def load_series():
-    df = pd.read_csv(HERE / "data" / "prices.csv", parse_dates=["date"], index_col="date")
-    apple = 1000 * df.aapl_adj_close / df.aapl_adj_close.iloc[0]
+    df = pd.read_csv(HERE / "data" / f"prices_{TICKER}.csv", parse_dates=["date"], index_col="date")
+    stock = 1000 * df.stock_adj_close / df.stock_adj_close.iloc[0]
     gold = 1000 * df.gld_close / df.gld_close.iloc[0]
     dates = df.index.values.astype("datetime64[D]").astype(float)  # days since epoch
-    return dates, apple.values, gold.values, df.index
+    return dates, stock.values, gold.values, df.index
 
 
 # ---------------------------------------------------------------- easing
@@ -106,14 +112,19 @@ class Renderer:
         self.d, self.a, self.g, self.idx = load_series()
         self.n = len(self.d)
         self.y_lo, self.y_hi = 900.0, 1150.0
-        self.angle = {"apple": 0.0, "gold": 0.0}
+        self.angle = {"stock": 0.0, "gold": 0.0}
+        first, last = self.idx[0], self.idx[-1]
+        self.subtitle = f"$1,000 invested in {first:%b %Y}"
+        self.footer = (f"Daily closes · {first:%b %-d, %Y} – {last:%b %-d, %Y}",
+                       f"Gold = GLD ETF · {LABEL} incl. reinvested dividends",
+                       "Past performance ≠ future results · Not financial advice")
         self.events = [(np.datetime64(s).astype(float), np.datetime64(e).astype(float), c)
                        for s, e, c in EVENTS]
         self.fig = plt.figure(figsize=(W / 100, H / 100), dpi=100, facecolor=BG)
         self.measure_title()
 
     def measure_title(self):
-        """Measure each title word so the whole "GOLD vs APPLE" line is truly centred."""
+        """Measure each title word so the whole "GOLD vs <STOCK>" line is truly centred."""
         rend = self.fig.canvas.get_renderer()
         self.title_w = []
         for txt, _col, size, weight in TITLE_PARTS:
@@ -193,14 +204,14 @@ class Renderer:
 
         # ---- lines with glow
         dim = 1 - 0.35 * finale
-        for y, col, z in ((yg, GOLD, 3), (ya, APPLE, 4)):
+        for y, col, z in ((yg, GOLD, 3), (ya, STOCK, 4)):
             for lw, al in ((16, 0.05), (9, 0.10), (5, 0.25)):
                 ax.plot(xs, y, color=col, lw=lw, alpha=al * dim, solid_capstyle="round", zorder=z)
             ax.plot(xs, y, color=col, lw=3.6, alpha=dim, solid_capstyle="round", zorder=z + 0.5)
 
         # ---- arrow heads + value tags (pixel space)
         tips = {}
-        for key, y, col in (("apple", ya, APPLE), ("gold", yg, GOLD)):
+        for key, y, col in (("stock", ya, STOCK), ("gold", yg, GOLD)):
             pts = ax.transData.transform(np.column_stack([xs[-120:], y[-120:]]))
             tip = pts[-1]
             sm = pts.copy()
@@ -221,14 +232,14 @@ class Renderer:
             tips[key] = tip
 
         # tag positions, pushed apart if overlapping
-        ya_px, yg_px = tips["apple"][1], tips["gold"][1]
+        ya_px, yg_px = tips["stock"][1], tips["gold"][1]
         min_gap = 112
         if abs(ya_px - yg_px) < min_gap:
             mid = (ya_px + yg_px) / 2
             hi_first = ya_px >= yg_px
             ya_px = mid + (min_gap / 2 if hi_first else -min_gap / 2)
             yg_px = mid - (min_gap / 2 if hi_first else -min_gap / 2)
-        for key, ypx, col, name, val in (("apple", ya_px, APPLE, "APPLE", ya[-1]),
+        for key, ypx, col, name, val in (("stock", ya_px, STOCK, NAME, ya[-1]),
                                          ("gold", yg_px, GOLD, "GOLD", yg[-1])):
             x0 = tips[key][0] + 40
             if finale < 1:
@@ -243,7 +254,7 @@ class Renderer:
             fig.text(x / W, 1 - TITLE_Y / H, txt, color=col, fontsize=size, fontweight=weight,
                      ha="left", va="center")
             x += w + TITLE_GAP
-        fig.text(0.5, 1 - SUB_Y / H, "$1,000 invested in Nov 2016", color=TEXT, fontsize=40,
+        fig.text(0.5, 1 - SUB_Y / H, self.subtitle, color=TEXT, fontsize=40,
                  fontweight="semibold", ha="center", va="center")
         date_str = pd.Timestamp(np.datetime64(int(cur_d), "D")).strftime("%b %Y")
         fig.text(0.5, 1 - DATE_Y / H, date_str.upper(), color=MUTED, fontsize=32,
@@ -256,9 +267,7 @@ class Renderer:
                 pill(fig, 0.5, 1 - PILL_Y / H, cap, fade)
 
         # ---- footer
-        for y, line in zip(FOOTER_Y, ("Daily closes · Nov 21, 2016 – Nov 19, 2026",
-                                      "Gold = GLD ETF · Apple incl. reinvested dividends",
-                                      "Past performance ≠ future results · Not financial advice")):
+        for y, line in zip(FOOTER_Y, self.footer):
             fig.text(0.5, 1 - y / H, line, color="#5b6070", fontsize=16, ha="center", va="center")
 
         # ---- 3-2-1 countdown before the race starts
@@ -296,7 +305,8 @@ class Renderer:
             pct = (val / 1000 - 1) * 100
             fig.text(x0 + 0.035, y + 0.022 - dy, name, color=col, fontsize=40, fontweight="heavy",
                      va="center", alpha=a, zorder=7)
-            fig.text(x0 + 0.035, y - 0.022 - dy, f"+{pct:,.0f}%", color=ACCENT_UP, fontsize=34,
+            fig.text(x0 + 0.035, y - 0.022 - dy, f"{pct:+,.0f}%",
+                     color=ACCENT_UP if pct >= 0 else ACCENT_DOWN, fontsize=34,
                      fontweight="bold", va="center", alpha=a, zorder=7)
             fig.text(x1 - 0.035, y - dy, f"${val:,.0f}", color=TEXT, fontsize=64, fontweight="heavy",
                      ha="right", va="center", alpha=a, zorder=7)
@@ -309,15 +319,20 @@ class Renderer:
                              bbox=dict(boxstyle="round,pad=0.45,rounding_size=0.8", fc=col,
                                        ec="none", alpha=wa))
 
-        win_apple = va >= vg
-        card(0.9, 1 - 1075 / H, "GOLD", GOLD, vg, not win_apple)
-        card(1.5, 1 - 790 / H, "APPLE", APPLE, va, win_apple)
+        # loser appears first at the bottom, winner second on top
+        top, bottom = 1 - 790 / H, 1 - 1075 / H
+        if va >= vg:
+            card(0.9, bottom, "GOLD", GOLD, vg, False)
+            card(1.5, top, NAME, STOCK, va, True)
+        else:
+            card(0.9, bottom, NAME, STOCK, va, False)
+            card(1.5, top, "GOLD", GOLD, vg, True)
 
         qa = ease_out((ft - 2.3) / 0.5)
         if qa > 0:
             fig.text(0.5, 1 - 1330 / H, "Which one would you pick?", color=TEXT, fontsize=34,
                      fontweight="heavy", ha="center", va="center", alpha=qa, zorder=7)
-            fig.text(0.5, 1 - 1395 / H, "Comment GOLD or APPLE", color=MUTED, fontsize=28,
+            fig.text(0.5, 1 - 1395 / H, f"Comment GOLD or {NAME}", color=MUTED, fontsize=28,
                      fontweight="semibold", ha="center", va="center", alpha=qa, zorder=7)
 
 
@@ -332,7 +347,7 @@ def draw_countdown(fig, t):
     r = 125  # small enough that the waiting arrows and $1,000 tags stay visible
     fig.patches.append(Circle((cx, cy), r, transform=IdentityTransform(), fill=False,
                               ec=GRID, lw=10, alpha=alpha, zorder=12))
-    col = (GOLD, APPLE, ACCENT_UP)[3 - n]
+    col = (GOLD, STOCK, ACCENT_UP)[3 - n]
     fig.patches.append(Arc((cx, cy), 2 * r, 2 * r, theta1=90, theta2=90 + 360 * (1 - u) + 1e-3,
                            transform=IdentityTransform(), ec=col, lw=10, alpha=alpha, zorder=13))
     fig.text(cx / W, cy / H, str(n), color=TEXT, fontsize=150 * scale, fontweight="heavy",
@@ -360,11 +375,16 @@ def draw_arrow(fig, tip, ang, col, alpha=1.0, length=46, width=40):
                                fc=col, ec="none", alpha=alpha, zorder=10))
 
 
-def pill(fig, x, y, text, alpha):
-    fig.text(x, y, text, color=TEXT, fontsize=34, fontweight="bold", ha="center", va="center",
-             alpha=alpha, zorder=6,
-             bbox=dict(boxstyle="round,pad=0.55,rounding_size=0.9", fc="#1a1d28",
-                       ec="#2c3142", lw=2, alpha=alpha))
+def pill(fig, x, y, text, alpha, max_w=SAFE_RIGHT - SAFE_LEFT - 20):
+    """Caption bubble; the font shrinks if the box would leave the safe zone."""
+    size = 34
+    t = fig.text(x, y, text, color=TEXT, fontsize=size, fontweight="bold", ha="center",
+                 va="center", alpha=alpha, zorder=6,
+                 bbox=dict(boxstyle="round,pad=0.55,rounding_size=0.9", fc="#1a1d28",
+                           ec="#2c3142", lw=2, alpha=alpha))
+    w = t.get_window_extent(fig.canvas.get_renderer()).width
+    if w > max_w:
+        t.set_fontsize(size * max_w / w)
 
 
 # ---------------------------------------------------------------- audio
@@ -471,8 +491,10 @@ def make_audio(path, renderer):
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("ticker", nargs="?", default="AAPL", help=f"one of {', '.join(STOCKS)}")
     ap.add_argument("--preview", action="store_true")
     args = ap.parse_args()
+    configure(args.ticker.upper())
     OUT_DIR.mkdir(exist_ok=True)
     r = Renderer()
 
@@ -490,7 +512,7 @@ def main():
     r = Renderer()  # reset smoothing state
     wav = OUT_DIR / "audio.wav"
     make_audio(wav, r)
-    mp4 = OUT_DIR / "gold_vs_apple.mp4"
+    mp4 = OUT_DIR / f"gold_vs_{TICKER.lower()}.mp4"
     cmd = ["ffmpeg", "-y", "-loglevel", "error",
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
            "-i", str(wav),
