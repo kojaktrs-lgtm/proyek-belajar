@@ -50,12 +50,16 @@ SAFE_LEFT, SAFE_RIGHT, SAFE_TOP, SAFE_BOTTOM = 80, 1000, 240, 1600
 BTN_X, BTN_Y = 880, 980      # keep x <= BTN_X for anything below y = BTN_Y
 
 # vertical positions (from top)
-TITLE_Y, SUB_Y, DATE_Y, PILL_Y = 315, 410, 470, 552
+TITLE_Y, SUB_Y, DATE_Y, PILL_Y = 315, 410, 470, 574
 FOOTER_Y = (1536, 1561, 1586)   # small print sits at the very bottom of the safe zone
 
 # axes rectangle in pixels (left, bottom, width, height), origin bottom-left
-AX_PX = (100, H - 1500, 770, 1500 - 625)
-TIP_FRAC = 0.60          # where the arrow tips sit horizontally inside the axes
+# Plot area: a 105 px label gutter on the left (x 120-225, value labels right-aligned),
+# the plot itself from x 225 to 960, so the outer margins are 120 px on both sides.
+AX_PX = (225, H - 1500, 960 - 225, 1500 - 650)
+TIP_FRAC = (W / 2 - AX_PX[0]) / AX_PX[2]   # arrow tips ride the frame's centre line
+START_SPAN = 240.0       # y-range ($) at the start, with $1,000 on the frame centre (y = 960)
+SETTLE = 1.5             # seconds for the y-axis to hand over to auto-scaling
 
 TITLE_GAP = 30  # px between title words
 
@@ -111,7 +115,7 @@ class Renderer:
         setup_fonts()
         self.d, self.a, self.g, self.idx = load_series()
         self.n = len(self.d)
-        self.y_lo, self.y_hi = 900.0, 1150.0
+        self.y_lo = self.y_hi = 0.0   # set on frame 0
         self.angle = {"stock": 0.0, "gold": 0.0}
         first, last = self.idx[0], self.idx[-1]
         self.subtitle = f"$1,000 invested in {first:%b %Y}"
@@ -169,40 +173,45 @@ class Renderer:
         xmin = min(self.d[0], cur_d - TIP_FRAC * width)
         ax.set_xlim(xmin, xmin + width)
 
+        # The race starts exactly where the countdown was: $1,000 on the frame centre.
+        c_frac = (H / 2 - AX_PX[1]) / AX_PX[3]          # frame centre inside the axes (0..1)
+        a_lo = 1000 - c_frac * START_SPAN
+        a_hi = a_lo + START_SPAN
         hi_target = max(ya.max(), yg.max()) * 1.10
         lo_target = min(ya.min(), yg.min()) * 0.90
-        k_s = 0.18 if k else 1.0
-        self.y_hi += (hi_target - self.y_hi) * k_s
-        self.y_lo += (lo_target - self.y_lo) * k_s
-        cur_max = max(ya[-1], yg[-1])
-        self.y_hi = max(self.y_hi, cur_max * 1.06)
-        self.y_lo = min(self.y_lo, min(ya[-1], yg[-1]) * 0.94)
-        ax.set_ylim(self.y_lo, self.y_hi)
+        if k == 0:
+            self.y_lo, self.y_hi = a_lo, a_hi
+        self.y_hi += (hi_target - self.y_hi) * 0.18
+        self.y_lo += (lo_target - self.y_lo) * 0.18
+        w = 0.5 - 0.5 * math.cos(math.pi * clamp((t - INTRO) / SETTLE))
+        lo = a_lo + (self.y_lo - a_lo) * w
+        hi = a_hi + (self.y_hi - a_hi) * w
+        hi = max(hi, max(ya[-1], yg[-1]) * 1.06)
+        lo = min(lo, min(ya[-1], yg[-1]) * 0.94)
+        ax.set_ylim(lo, hi)
 
         # grid + y labels
-        ax.tick_params(length=0, colors=MUTED, labelsize=24)
+        ax.tick_params(length=0, labelsize=22, labelcolor="#5b6070", pad=14)
         ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(5))
-        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(money_short))
+        # full dollar labels; the one on the $1,000 start line is left to the baseline label
+        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(
+            lambda v, _p: "" if abs(v - 1000) < 0.09 * (hi - lo) else f"${v:,.0f}"))
         ax.yaxis.tick_left()
         ax.grid(axis="y", color=GRID, lw=1.5)
         ax.set_xticks([])
-        for lab in ax.get_yticklabels():
-            lab.set_horizontalalignment("left")
-            lab.set_x(0.005)
-            lab.set_verticalalignment("bottom")
-            lab.set_color("#5b6070")
-        ax.tick_params(axis="y", pad=-6)
 
         # big faded year watermark
         year = str(int(np.datetime64(int(cur_d), "D").astype("datetime64[Y]").astype(int) + 1970))
         if t >= INTRO:
-            ax.text(0.5, 0.45, year, transform=ax.transAxes, ha="center", va="center",
+            # x on the frame's centre line, y inside the plot
+            on_centre = matplotlib.transforms.blended_transform_factory(fig.transFigure, ax.transAxes)
+            ax.text(0.5, 0.45, year, transform=on_centre, ha="center", va="center",
                     fontsize=250, fontweight="bold", color=TEXT, alpha=0.06, zorder=0)
 
         # $1,000 baseline
         ax.axhline(1000, color=MUTED, lw=2, ls=(0, (6, 6)), alpha=0.5, zorder=1)
-        ax.text(0.01, 1000, "  $1,000 start", transform=ax.get_yaxis_transform(),
-                va="top", ha="left", fontsize=22, color=MUTED, alpha=0.8)
+        ax.text(-14 / AX_PX[2], 1000, "$1,000", transform=ax.get_yaxis_transform(),
+                va="center", ha="right", fontsize=22, fontweight="bold", color=MUTED)
 
         # ---- lines with glow
         dim = 1 - 0.35 * finale
@@ -233,6 +242,8 @@ class Renderer:
             self.angle[key] += (ang - self.angle[key]) * (0.3 if k else 1.0)
             draw_arrow(fig, tip, self.angle[key], col, alpha=show * (1 - finale))
             tips[key] = tip
+
+        self.last_tips = tips   # pixel positions (origin bottom-left), used by checks
 
         # tag positions, pushed apart if overlapping
         ya_px, yg_px = tips["stock"][1], tips["gold"][1]
@@ -323,7 +334,8 @@ class Renderer:
                                        ec="none", alpha=wa))
 
         # loser appears first at the bottom, winner second on top
-        top, bottom = 1 - 790 / H, 1 - 1075 / H
+        # whole group (badge, two cards, question) is centred on the frame (y = 960)
+        top, bottom = 1 - 758 / H, 1 - 1043 / H
         if va >= vg:
             card(0.9, bottom, "GOLD", GOLD, vg, False)
             card(1.5, top, NAME, STOCK, va, True)
@@ -333,9 +345,9 @@ class Renderer:
 
         qa = ease_out((ft - 2.3) / 0.5)
         if qa > 0:
-            fig.text(0.5, 1 - 1330 / H, "Which one would you pick?", color=TEXT, fontsize=34,
+            fig.text(0.5, 1 - 1275 / H, "Which one would you pick?", color=TEXT, fontsize=34,
                      fontweight="heavy", ha="center", va="center", alpha=qa, zorder=7)
-            fig.text(0.5, 1 - 1395 / H, f"Comment GOLD or {NAME}", color=MUTED, fontsize=28,
+            fig.text(0.5, 1 - 1331 / H, f"Comment GOLD or {NAME}", color=MUTED, fontsize=28,
                      fontweight="semibold", ha="center", va="center", alpha=qa, zorder=7)
 
 
@@ -384,13 +396,6 @@ def draw_countdown(fig, t):
     fig.text((cx - dx * scale) / W, (cy + dy * scale) / H, str(n), color=TEXT,
              fontsize=COUNT_SIZE * scale, fontweight="heavy", ha="center", va="center",
              alpha=alpha, zorder=14)
-
-
-def money_short(v, _pos=None):
-    if v >= 1000:
-        s = f"{v / 1000:.2f}".rstrip("0").rstrip(".")
-        return f"${s}k"
-    return f"${v:,.0f}"
 
 
 def draw_arrow(fig, tip, ang, col, alpha=1.0, length=46, width=40):

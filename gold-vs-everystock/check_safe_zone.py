@@ -30,8 +30,14 @@ def main():
     for k in range(mv.N_FRAMES):
         img = r.frame(k)
         if k % 10 == 0 or k in keep:
-            fg = np.abs(img.astype(int) - BG).sum(axis=2) > 60
+            # > 90 ignores the faint decorative grid lines, which may run under the UI
+            fg = np.abs(img.astype(int) - BG).sum(axis=2) > 90
             bad = fg & mask
+            # thin horizontal rules (grid / $1,000 baseline, <= 4 px tall) may run under
+            # the UI; flag only things with height: text, numbers, arrows, card edges.
+            tall = np.zeros_like(bad)
+            tall[4:] |= bad[4:] & bad[:-4]
+            bad = tall
             if bad.any():
                 ys, xs = np.where(bad)
                 worst.append((k, int(bad.sum()), xs.min(), xs.max(), ys.min(), ys.max()))
