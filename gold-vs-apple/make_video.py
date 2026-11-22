@@ -48,10 +48,10 @@ BTN_X, BTN_Y = 880, 980      # keep x <= BTN_X for anything below y = BTN_Y
 
 # vertical positions (from top)
 TITLE_Y, SUB_Y, DATE_Y, PILL_Y = 315, 410, 470, 552
-FOOTER_Y = (1482, 1510, 1538)
+FOOTER_Y = (1536, 1561, 1586)   # small print sits at the very bottom of the safe zone
 
 # axes rectangle in pixels (left, bottom, width, height), origin bottom-left
-AX_PX = (100, H - 1420, 770, 1420 - 625)
+AX_PX = (100, H - 1500, 770, 1500 - 625)
 TIP_FRAC = 0.60          # where the arrow tips sit horizontally inside the axes
 
 TITLE_PARTS = [("GOLD", GOLD, 80, "heavy"), ("vs", MUTED, 46, "bold"), ("APPLE", APPLE, 80, "heavy")]
@@ -259,7 +259,7 @@ class Renderer:
         for y, line in zip(FOOTER_Y, ("Daily closes · Nov 21, 2016 – Nov 19, 2026",
                                       "Gold = GLD ETF · Apple incl. reinvested dividends",
                                       "Past performance ≠ future results · Not financial advice")):
-            fig.text(0.5, 1 - y / H, line, color="#6b7080", fontsize=18, ha="center", va="center")
+            fig.text(0.5, 1 - y / H, line, color="#5b6070", fontsize=16, ha="center", va="center")
 
         # ---- 3-2-1 countdown before the race starts
         if t < INTRO:
@@ -275,7 +275,7 @@ class Renderer:
 
     def draw_finale(self, fig, ft, va, vg):
         ov = clamp(ft / 0.6)
-        fig.patches.append(FancyBboxPatch((0, 1 - 1450 / H), 1, (1450 - 600) / H, boxstyle="square,pad=0",
+        fig.patches.append(FancyBboxPatch((0, 1 - 1515 / H), 1, (1515 - 600) / H, boxstyle="square,pad=0",
                                           transform=fig.transFigure, fc=BG, ec="none",
                                           alpha=0.9 * ov, zorder=5))
 
@@ -310,14 +310,14 @@ class Renderer:
                                        ec="none", alpha=wa))
 
         win_apple = va >= vg
-        card(0.9, 1 - 1040 / H, "GOLD", GOLD, vg, not win_apple)
-        card(1.5, 1 - 770 / H, "APPLE", APPLE, va, win_apple)
+        card(0.9, 1 - 1075 / H, "GOLD", GOLD, vg, not win_apple)
+        card(1.5, 1 - 790 / H, "APPLE", APPLE, va, win_apple)
 
         qa = ease_out((ft - 2.3) / 0.5)
         if qa > 0:
-            fig.text(0.5, 1 - 1275 / H, "Which one would you pick?", color=TEXT, fontsize=34,
+            fig.text(0.5, 1 - 1330 / H, "Which one would you pick?", color=TEXT, fontsize=34,
                      fontweight="heavy", ha="center", va="center", alpha=qa, zorder=7)
-            fig.text(0.5, 1 - 1345 / H, "Comment GOLD or APPLE", color=MUTED, fontsize=28,
+            fig.text(0.5, 1 - 1395 / H, "Comment GOLD or APPLE", color=MUTED, fontsize=28,
                      fontweight="semibold", ha="center", va="center", alpha=qa, zorder=7)
 
 
