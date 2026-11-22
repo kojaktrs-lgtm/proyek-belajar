@@ -3,6 +3,9 @@
 Every event caption must be true in the data on the day it starts showing
 (check with the numbers printed by fetch_data.py before adding one).
 Caption windows must not overlap.
+
+Optional keys: "note" replaces the footer's "<label> incl. reinvested dividends"
+line (e.g. for assets without dividends); "slug" names the output file.
 """
 
 START, END = "2016-11-21", "2026-11-19"
@@ -30,6 +33,22 @@ STOCKS = {
             ("2026-04-01", "2026-06-21", "Nike hovers around its $1,000 start"),  # crosses $1k 9x
             ("2026-06-22", "2026-09-30", "Nike sinks below its $1,000 start"),    # below from here on
             ("2026-10-02", "2026-11-19", "Nike is down over 75% from its peak"),  # −75%…−79% here
+        ],
+    ),
+    "BTC-USD": dict(
+        name="BITCOIN", label="Bitcoin", color="#a98bff", slug="btc",
+        # purple, not Bitcoin orange: orange is too close to the gold line
+        note="Bitcoin = BTC-USD close",
+        events=[
+            ("2017-12-18", "2018-03-15", "Dec 2017: Bitcoin bubble peaks"),
+            ("2018-12-14", "2019-03-31", "2018: Bitcoin crashes 83%"),          # 2017 peak -> trough
+            ("2020-03-12", "2020-05-31", "Mar 2020: Bitcoin −37% in one day"),
+            ("2021-11-08", "2022-02-28", "Nov 2021: new all-time high"),
+            ("2022-11-21", "2023-02-28", "2022: crypto winter, −77%"),          # trough 2022-11-21
+            ("2024-01-11", "2024-03-31", "Jan 2024: Bitcoin ETFs launch"),
+            ("2025-10-06", "2026-01-15", "Oct 2025: Bitcoin record high"),
+            ("2026-01-29", "2026-03-25", "Jan 2026: gold hits record high"),
+            ("2026-06-30", "2026-09-15", "June 2026: Bitcoin −53% from record"),  # trough 2026-06-30
         ],
     ),
 }

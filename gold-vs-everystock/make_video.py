@@ -64,15 +64,17 @@ SETTLE = 1.5             # seconds for the y-axis to hand over to auto-scaling
 TITLE_GAP = 30  # px between title words
 
 # filled in by configure(ticker)
-TICKER = NAME = LABEL = STOCK = None
+TICKER = NAME = LABEL = STOCK = NOTE = SLUG = None
 TITLE_PARTS, EVENTS = [], []
 
 
 def configure(ticker):
     """Select which stock races gold (see stocks.py)."""
-    global TICKER, NAME, LABEL, STOCK, TITLE_PARTS, EVENTS
+    global TICKER, NAME, LABEL, STOCK, NOTE, SLUG, TITLE_PARTS, EVENTS
     cfg = STOCKS[ticker]
     TICKER, NAME, LABEL, STOCK = ticker, cfg["name"], cfg["label"], cfg["color"]
+    NOTE = cfg.get("note", f"{LABEL} incl. reinvested dividends")
+    SLUG = cfg.get("slug", ticker.lower())
     TITLE_PARTS = [("GOLD", GOLD, 80, "heavy"), ("vs", MUTED, 46, "bold"), (NAME, STOCK, 80, "heavy")]
     EVENTS = cfg["events"]
 
@@ -118,9 +120,10 @@ class Renderer:
         self.y_lo = self.y_hi = 0.0   # set on frame 0
         self.angle = {"stock": 0.0, "gold": 0.0}
         first, last = self.idx[0], self.idx[-1]
-        self.subtitle = f"$1,000 invested in {first:%b %Y}"
+        years = round((last - first).days / 365.25)
+        self.subtitle = f"$1,000 for {years} years"
         self.footer = (f"Daily closes · {first:%b %-d, %Y} – {last:%b %-d, %Y}",
-                       f"Gold = GLD ETF · {LABEL} incl. reinvested dividends",
+                       f"Gold = GLD ETF · {NOTE}",
                        "Past performance ≠ future results · Not financial advice")
         self.events = [(np.datetime64(s).astype(float), np.datetime64(e).astype(float), c)
                        for s, e, c in EVENTS]
@@ -188,6 +191,8 @@ class Renderer:
         hi = a_hi + (self.y_hi - a_hi) * w
         hi = max(hi, max(ya[-1], yg[-1]) * 1.06)
         lo = min(lo, min(ya[-1], yg[-1]) * 0.94)
+        # keep the lowest tip (and its value tag) clear of the plot's bottom edge
+        lo = min(lo, min(ya[-1], yg[-1]) - 0.09 * (hi - lo))
         ax.set_ylim(lo, hi)
 
         # grid + y labels
@@ -195,7 +200,8 @@ class Renderer:
         ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(5))
         # full dollar labels; the one on the $1,000 start line is left to the baseline label
         ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(
-            lambda v, _p: "" if abs(v - 1000) < 0.09 * (hi - lo) else f"${v:,.0f}"))
+            lambda v, _p: "" if abs(v - 1000) < 0.09 * (hi - lo)
+            else (f"${v / 1000:,.0f}K" if hi >= 100_000 else f"${v:,.0f}")))  # fits the gutter
         ax.yaxis.tick_left()
         ax.grid(axis="y", color=GRID, lw=1.5)
         ax.set_xticks([])
@@ -296,11 +302,29 @@ class Renderer:
         img = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].copy()
         return img
 
+    def card_value_size(self, va, vg):
+        """One font size for both card values, shrunk if a long name or number would
+        come within 36 px of the left column (name / percentage)."""
+        fig = self.fig
+        rend = fig.canvas.get_renderer()
+        x1 = (BTN_X - 14) - 0.035 * W          # right edge of the value (px)
+        x0 = (W - (BTN_X - 14)) + 0.035 * W    # left edge of name / percentage (px)
+        size = 64
+        for name, val in ((NAME, va), ("GOLD", vg)):
+            pct = (val / 1000 - 1) * 100
+            left = max(_text_width(fig, rend, name, 40), _text_width(fig, rend, f"{pct:+,.0f}%", 34))
+            room = x1 - (x0 + left) - 36
+            need = _text_width(fig, rend, f"${val:,.0f}", 64)
+            size = min(size, 64 * room / need) if need > room else size
+        return size
+
     def draw_finale(self, fig, ft, va, vg):
         ov = clamp(ft / 0.6)
         fig.patches.append(FancyBboxPatch((0, 1 - 1515 / H), 1, (1515 - 600) / H, boxstyle="square,pad=0",
                                           transform=fig.transFigure, fc=BG, ec="none",
                                           alpha=0.9 * ov, zorder=5))
+
+        val_size = self.card_value_size(va, vg)
 
         def card(appear, y, name, col, val, winner):
             a = ease_out((ft - appear) / 0.45)
@@ -317,13 +341,13 @@ class Renderer:
                                  mutation_aspect=W / H)
             fig.patches.append(box)
             pct = (val / 1000 - 1) * 100
-            fig.text(x0 + 0.035, y + 0.022 - dy, name, color=col, fontsize=40, fontweight="heavy",
-                     va="center", alpha=a, zorder=7)
-            fig.text(x0 + 0.035, y - 0.022 - dy, f"{pct:+,.0f}%",
-                     color=ACCENT_UP if pct >= 0 else ACCENT_DOWN, fontsize=34,
-                     fontweight="bold", va="center", alpha=a, zorder=7)
-            fig.text(x1 - 0.035, y - dy, f"${val:,.0f}", color=TEXT, fontsize=64, fontweight="heavy",
-                     ha="right", va="center", alpha=a, zorder=7)
+            t_name = fig.text(x0 + 0.035, y + 0.022 - dy, name, color=col, fontsize=40,
+                              fontweight="heavy", va="center", alpha=a, zorder=7)
+            t_pct = fig.text(x0 + 0.035, y - 0.022 - dy, f"{pct:+,.0f}%",
+                             color=ACCENT_UP if pct >= 0 else ACCENT_DOWN, fontsize=34,
+                             fontweight="bold", va="center", alpha=a, zorder=7)
+            fig.text(x1 - 0.035, y - dy, f"${val:,.0f}", color=TEXT, fontsize=val_size,
+                     fontweight="heavy", ha="right", va="center", alpha=a, zorder=7)
             if winner:
                 wa = ease_out((ft - appear - 0.6) / 0.35)
                 if wa > 0:
@@ -398,6 +422,13 @@ def draw_countdown(fig, t):
              alpha=alpha, zorder=14)
 
 
+def _text_width(fig, rend, text, size):
+    t = fig.text(0, 0, text, fontsize=size, fontweight="heavy")
+    w = t.get_window_extent(rend).width
+    t.remove()
+    return w
+
+
 def draw_arrow(fig, tip, ang, col, alpha=1.0, length=46, width=40):
     c, s = math.cos(ang), math.sin(ang)
     fwd, nrm = np.array([c, s]), np.array([-s, c])
@@ -412,7 +443,7 @@ def draw_arrow(fig, tip, ang, col, alpha=1.0, length=46, width=40):
                                fc=col, ec="none", alpha=alpha, zorder=10))
 
 
-def pill(fig, x, y, text, alpha, max_w=SAFE_RIGHT - SAFE_LEFT - 20):
+def pill(fig, x, y, text, alpha, max_w=SAFE_RIGHT - SAFE_LEFT - 80):
     """Caption bubble; the font shrinks if the box would leave the safe zone."""
     size = 34
     t = fig.text(x, y, text, color=TEXT, fontsize=size, fontweight="bold", ha="center",
@@ -549,7 +580,7 @@ def main():
     r = Renderer()  # reset smoothing state
     wav = OUT_DIR / "audio.wav"
     make_audio(wav, r)
-    mp4 = OUT_DIR / f"gold_vs_{TICKER.lower()}.mp4"
+    mp4 = OUT_DIR / f"gold_vs_{SLUG}.mp4"
     cmd = ["ffmpeg", "-y", "-loglevel", "error",
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
            "-i", str(wav),

@@ -64,7 +64,7 @@ def main():
     sheet = Image.new("RGB", (4 * mv.W + 60, mv.H), (40, 40, 40))
     for i, t in enumerate(tiles):
         sheet.paste(t, (i * (mv.W + 20), 0))
-    sheet.resize((sheet.width // 3, sheet.height // 3)).save(mv.OUT_DIR / f"safezone_mock_{mv.TICKER.lower()}.png")
+    sheet.resize((sheet.width // 3, sheet.height // 3)).save(mv.OUT_DIR / f"safezone_mock_{mv.SLUG}.png")
 
 
 if __name__ == "__main__":
