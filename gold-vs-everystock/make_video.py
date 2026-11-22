@@ -122,6 +122,8 @@ class Renderer:
                        for s, e, c in EVENTS]
         self.fig = plt.figure(figsize=(W / 100, H / 100), dpi=100, facecolor=BG)
         self.measure_title()
+        if not COUNT_INK:
+            measure_countdown_digits()
 
     def measure_title(self):
         """Measure each title word so the whole "GOLD vs <STOCK>" line is truly centred."""
@@ -211,6 +213,7 @@ class Renderer:
 
         # ---- arrow heads + value tags (pixel space)
         tips = {}
+        show = clamp((t - INTRO + 0.15) / 0.3)   # arrows/tags appear as the countdown ends
         for key, y, col in (("stock", ya, STOCK), ("gold", yg, GOLD)):
             pts = ax.transData.transform(np.column_stack([xs[-120:], y[-120:]]))
             tip = pts[-1]
@@ -228,7 +231,7 @@ class Renderer:
             if k == 0 or t < INTRO:
                 ang = 0.0
             self.angle[key] += (ang - self.angle[key]) * (0.3 if k else 1.0)
-            draw_arrow(fig, tip, self.angle[key], col, alpha=1 - finale)
+            draw_arrow(fig, tip, self.angle[key], col, alpha=show * (1 - finale))
             tips[key] = tip
 
         # tag positions, pushed apart if overlapping
@@ -242,11 +245,11 @@ class Renderer:
         for key, ypx, col, name, val in (("stock", ya_px, STOCK, NAME, ya[-1]),
                                          ("gold", yg_px, GOLD, "GOLD", yg[-1])):
             x0 = tips[key][0] + 40
-            if finale < 1:
+            if finale < 1 and show > 0:
                 fig.text(x0 / W, (ypx + 22) / H, name, color=col, fontsize=24, fontweight="bold",
-                         va="center", alpha=1 - finale)
+                         va="center", alpha=show * (1 - finale))
                 fig.text(x0 / W, (ypx - 16) / H, f"${val:,.0f}", color=TEXT, fontsize=40,
-                         fontweight="heavy", va="center", alpha=1 - finale)
+                         fontweight="heavy", va="center", alpha=show * (1 - finale))
 
         # ---- header
         x = self.title_x0
@@ -336,22 +339,51 @@ class Renderer:
                      fontweight="semibold", ha="center", va="center", alpha=qa, zorder=7)
 
 
+COUNT_R, COUNT_SIZE = 150, 170   # ring radius (px) and digit font size
+COUNT_INK = {}                    # digit -> (dx, dy) ink-centre offset at COUNT_SIZE, px
+
+
+def measure_countdown_digits():
+    """Measure where each digit's ink really sits relative to its text anchor.
+
+    Text centring uses the font's line box, not the visible glyph, so digits look
+    off-centre in the ring. We render each digit once and store the correction.
+    """
+    fig = plt.figure(figsize=(W / 100, H / 100), dpi=100, facecolor="black")
+    for n in "123":
+        fig.clf()
+        fig.text(0.5, 0.5, n, color="white", fontsize=COUNT_SIZE, fontweight="heavy",
+                 ha="center", va="center")
+        fig.canvas.draw()
+        ink = np.asarray(fig.canvas.buffer_rgba())[:, :, 0] > 128
+        ys, xs = np.where(ink)
+        # dx: ink right of anchor (+); dy: ink below anchor in image rows (+)
+        COUNT_INK[n] = ((xs.min() + xs.max()) / 2 - W / 2, (ys.min() + ys.max()) / 2 - H / 2)
+    plt.close(fig)
+
+
 def draw_countdown(fig, t):
-    """Big 3 / 2 / 1 with a draining ring, centred on the chart area."""
+    """Big 3 / 2 / 1 with a draining ring, exactly in the centre of the frame."""
     n = int(INTRO - math.floor(t))          # 3, 2, 1
     u = t - math.floor(t)                   # 0..1 within this number
-    cx, cy = W / 2, AX_PX[1] + AX_PX[3] * 0.80   # above the $1,000 start line
+    cx, cy = W / 2, H / 2
     pop = ease_out(u / 0.25)
     scale = 1.35 - 0.35 * pop
     alpha = pop * (1 - clamp((u - 0.82) / 0.18))
-    r = 125  # small enough that the waiting arrows and $1,000 tags stay visible
+    r = COUNT_R
+    # backdrop hides the chart behind the ring; fades out as the race starts
+    bg_a = 1 - clamp((t - (INTRO - 0.2)) / 0.2)
+    fig.patches.append(Circle((cx, cy), r + 30, transform=IdentityTransform(), fc=BG,
+                              ec="none", alpha=bg_a, zorder=11))
     fig.patches.append(Circle((cx, cy), r, transform=IdentityTransform(), fill=False,
                               ec=GRID, lw=10, alpha=alpha, zorder=12))
     col = (GOLD, STOCK, ACCENT_UP)[3 - n]
     fig.patches.append(Arc((cx, cy), 2 * r, 2 * r, theta1=90, theta2=90 + 360 * (1 - u) + 1e-3,
                            transform=IdentityTransform(), ec=col, lw=10, alpha=alpha, zorder=13))
-    fig.text(cx / W, cy / H, str(n), color=TEXT, fontsize=150 * scale, fontweight="heavy",
-             ha="center", va="center_baseline", alpha=alpha, zorder=14)
+    dx, dy = COUNT_INK[str(n)]
+    fig.text((cx - dx * scale) / W, (cy + dy * scale) / H, str(n), color=TEXT,
+             fontsize=COUNT_SIZE * scale, fontweight="heavy", ha="center", va="center",
+             alpha=alpha, zorder=14)
 
 
 def money_short(v, _pos=None):
