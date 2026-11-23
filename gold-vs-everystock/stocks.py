@@ -51,4 +51,15 @@ STOCKS = {
             ("2026-06-30", "2026-09-15", "June 2026: Bitcoin −53% from record"),  # trough 2026-06-30
         ],
     ),
+    "KO": dict(
+        name="COCA-COLA", label="Coca-Cola", color="#ff5a5f",
+        events=[
+            ("2020-03-23", "2020-06-10", "2020: COVID crash, Coke −37%"),
+            ("2020-12-08", "2021-03-02", "Late 2020: gold pulls ahead"),
+            ("2022-08-19", "2022-11-30", "Aug 2022: Coke leads by $490"),
+            ("2024-10-21", "2025-01-31", "Oct 2024: gold retakes the lead"),
+            ("2026-01-28", "2026-04-30", "Jan 2026: gold leads by $1,916"),
+            ("2026-10-30", "2026-11-19", "Oct 2026: the Coca-Cola comeback!"),
+        ],
+    ),
 }

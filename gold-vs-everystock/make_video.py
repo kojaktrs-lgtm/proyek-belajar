@@ -141,6 +141,12 @@ class Renderer:
             self.title_w.append(t.get_window_extent(rend).width)
             t.remove()
         total = sum(self.title_w) + TITLE_GAP * (len(TITLE_PARTS) - 1)
+        max_w = SAFE_RIGHT - SAFE_LEFT - 80          # long names: shrink the whole title
+        if total > max_w:
+            k = max_w / total
+            TITLE_PARTS[:] = [(t, c, size * k, wt) for t, c, size, wt in TITLE_PARTS]
+            self.title_w = [w * k for w in self.title_w]
+            total = max_w
         self.title_x0 = (W - total) / 2
 
     # value at fractional index
