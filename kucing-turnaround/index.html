@@ -181,9 +181,9 @@ footer { color: var(--muted); font-size: 13px; border-top: 1.5px solid var(--lin
         <h2>Aturan menggambar Oyen</h2>
         <ul>
           <li>Kepala 100 unit, badan duduk 120 unit. Kepala selalu lebih lebar dari badan.</li>
-          <li>Telinga selalu digambar di belakang garis kepala, termasuk saat tampak belakang.</li>
+          <li>Tampak depan: kedua telinga di belakang garis kepala. Tampak ¾: telinga sisi dekat menimpa kepala. Tampak belakang: kedua telinga menimpa kepala.</li>
           <li>Belang dahi tiga garis, garis tengah paling panjang.</li>
-          <li>Ekor melingkar ke kanan Oyen saat duduk. Ujungnya oranye tua.</li>
+          <li>Ekor melingkar ke sisi kiri Oyen saat duduk. Ujungnya oranye tua.</li>
           <li>Lonceng emas selalu di tengah depan kalung.</li>
           <li>Moncong krem menonjol sedikit di tampak samping.</li>
         </ul>
@@ -226,8 +226,8 @@ footer { color: var(--muted); font-size: 13px; border-top: 1.5px solid var(--lin
     ['Kalung', C.collar], ['Lonceng', C.bell], ['Garis tinta', C.ink]
   ];
   const VIEWS = [
-    [0, 'Depan'], [45, '¾ Depan Kiri'], [90, 'Samping Kiri'], [135, '¾ Belakang Kiri'],
-    [180, 'Belakang'], [225, '¾ Belakang Kanan'], [270, 'Samping Kanan'], [315, '¾ Depan Kanan']
+    [0, 'Depan'], [45, '¾ Depan Kanan'], [90, 'Samping Kanan'], [135, '¾ Belakang Kanan'],
+    [180, 'Belakang'], [225, '¾ Belakang Kiri'], [270, 'Samping Kiri'], [315, '¾ Depan Kiri']
   ];
   const EXPR = [['normal', 'Normal'], ['senang', 'Senang'], ['kaget', 'Kaget'], ['marah', 'Marah'], ['tidur', 'Tidur']];
   const TAU = Math.PI * 2, D2R = Math.PI / 180;
@@ -330,10 +330,16 @@ footer { color: var(--muted); font-size: 13px; border-top: 1.5px solid var(--lin
 
     // --- kepala ---
     const ears = [-1, 1].map(sg => ({ sg, A: [sg * 57, 170, 4], B: [sg * 15, 192, -14], T: [sg * 45, 228, -4] }));
-    for (const ear of ears) {
+    const headZ = V.P(HEAD.c).z;
+    // Telinga di depan kepala (sisi dekat saat ¾, keduanya saat tampak belakang) digambar
+    // setelah kepala, tanpa garis pangkal supaya menyatu dengan bulu kepala.
+    for (const ear of ears) ear.front = (V.P(ear.A).z + V.P(ear.B).z + V.P(ear.T).z) / 3 > headZ + 8;
+    const drawEar = ear => {
       const a = V.P(ear.A), b = V.P(ear.B), t = V.P(ear.T);
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(t.x, t.y); ctx.lineTo(b.x, b.y); ctx.closePath();
-      ctx.fillStyle = C.fur; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = OL; ctx.stroke();
+      ctx.fillStyle = C.fur; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = OL;
+      if (ear.front) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(t.x, t.y); ctx.lineTo(b.x, b.y); }
+      ctx.stroke();
       if (Math.cos(V.th + ear.sg * .35) > .1) {
         const g = { x: (a.x + b.x + t.x) / 3, y: (a.y + b.y + t.y) / 3 + 4 * s };
         const sh = p => ({ x: g.x + (p.x - g.x) * .55, y: g.y + (p.y - g.y) * .6 });
@@ -341,9 +347,9 @@ footer { color: var(--muted); font-size: 13px; border-top: 1.5px solid var(--lin
         ctx.beginPath(); ctx.moveTo(ia.x, ia.y); ctx.lineTo(it.x, it.y); ctx.lineTo(ib.x, ib.y); ctx.closePath();
         ctx.fillStyle = C.pink; ctx.fill();
       }
-    }
+    };
+    ears.filter(e => !e.front).forEach(drawEar);
 
-    const headZ = V.P(HEAD.c).z;
     const muzzles = [-1, 1].map(sg => ({ c: [sg * 10, 135, 50], a: [13, 11, 13] }))
       .map(M => ({ M, z: V.P(M.c).z })).sort((a, b) => a.z - b.z);
     const drawMuzzle = m => { const e = ellProj(V, m.M); ellipse(ctx, e.x, e.y, e.rx, e.ry, C.cream, C.muzzleLine, 1.8 * s); };
@@ -369,6 +375,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1.5px solid var(--lin
     }
     ctx.restore();
 
+    ears.filter(e => e.front).forEach(drawEar);
     muzzles.filter(m => m.z >= headZ).forEach(drawMuzzle);
 
     // hidung, mulut, kumis
