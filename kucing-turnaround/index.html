@@ -1,0 +1,587 @@
+<title>Oyen Character Sheet</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: lembar model animasi — kertas bergaris biru, panggung putar besar di kiri, catatan desainer di kanan, lalu baris turnaround & ekspresi */
+:root {
+  --paper: #EBF0F3;
+  --sheet: #F8FAFB;
+  --ink: #1F242C;
+  --muted: #5A6575;
+  --line: #B4C8DC;
+  --grid: rgba(110, 150, 190, .16);
+  --accent: #E07F2E;
+  --accent-ink: #A24D10;
+  --chip: #E2E9EF;
+  --shadow: rgba(30, 40, 55, .14);
+  --f-display: "Fredoka", "Baloo 2", system-ui, sans-serif;
+  --f-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #121822; --sheet: #19212D; --ink: #E6EAF0; --muted: #97A2B2;
+    --line: #2E3D54; --grid: rgba(120, 160, 210, .08); --accent: #F4A04A;
+    --accent-ink: #F6AE60; --chip: #243042; --shadow: rgba(0, 0, 0, .35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #121822; --sheet: #19212D; --ink: #E6EAF0; --muted: #97A2B2;
+  --line: #2E3D54; --grid: rgba(120, 160, 210, .08); --accent: #F4A04A;
+  --accent-ink: #F6AE60; --chip: #243042; --shadow: rgba(0, 0, 0, .35);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 15px;
+  line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+
+.label {
+  font-family: var(--f-mono); font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted);
+}
+
+/* Header */
+.head { display: flex; flex-wrap: wrap; gap: 20px 40px; align-items: flex-end; justify-content: space-between;
+  border-bottom: 2px solid var(--ink); padding-bottom: 18px; }
+.head-main { min-width: 0; flex: 1 1 380px; display: flex; flex-direction: column; gap: 6px; }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: clamp(56px, 9vw, 96px);
+  line-height: .9; margin: 0; letter-spacing: -.01em; color: var(--accent-ink); }
+.tagline { margin: 6px 0 0; max-width: 52ch; color: var(--muted); font-size: 16px; }
+.meta { display: grid; grid-template-columns: auto auto; gap: 4px 20px; margin: 0; font-size: 14px; }
+.meta dt { font-family: var(--f-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding-top: 3px; }
+.meta dd { margin: 0; font-weight: 500; }
+
+/* Stage */
+.top { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 24px; }
+@media (max-width: 860px) { .top { grid-template-columns: minmax(0, 1fr); } }
+.stage { background: var(--sheet); border: 1.5px solid var(--line); border-radius: 6px;
+  display: flex; flex-direction: column; min-width: 0; }
+.stage-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 10px 14px; border-bottom: 1.5px solid var(--line); flex-wrap: wrap; }
+.readout { font-family: var(--f-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.readout b { color: var(--accent-ink); font-weight: 600; }
+#main { width: 100%; max-width: 100%; aspect-ratio: 1 / 1; display: block; cursor: grab; touch-action: pan-y; }
+#main:active { cursor: grabbing; }
+.controls { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-top: 1.5px solid var(--line); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn, .chip {
+  font: 500 13px/1 var(--f-body); color: var(--ink); background: var(--chip);
+  border: 1.5px solid transparent; border-radius: 999px; padding: 8px 14px; cursor: pointer;
+}
+.btn:hover, .chip:hover { border-color: var(--line); }
+.btn:focus-visible, .chip:focus-visible, input:focus-visible, select:focus-visible, .turn-card:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.primary { background: var(--accent); color: #2A1405; font-weight: 600; min-width: 96px; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--sheet); }
+input[type="range"] { flex: 1 1 200px; accent-color: var(--accent); min-width: 0; }
+.toggle { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); cursor: pointer; }
+.toggle input { accent-color: var(--accent); }
+select { font: 500 13px var(--f-body); background: var(--chip); color: var(--ink); border: 1.5px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+
+/* Notes panel */
+.notes { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.panel { background: var(--sheet); border: 1.5px solid var(--line); border-radius: 6px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+h2 { font-family: var(--f-display); font-weight: 600; font-size: 22px; margin: 0; text-wrap: balance; }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.sw { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.sw i { width: 34px; height: 34px; border-radius: 50%; flex: none; border: 2px solid #4A2A18; }
+.sw div { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.sw span { font-size: 13px; font-weight: 500; }
+.sw code { font-family: var(--f-mono); font-size: 11px; color: var(--muted); }
+.notes ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.notes li::marker { color: var(--accent); }
+
+/* Sections */
+.sec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.sec-head p { margin: 0; color: var(--muted); font-size: 14px; }
+.turn { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 980px) { .turn { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .turn { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.turn-card { background: var(--sheet); border: 1.5px solid var(--line); border-radius: 6px; padding: 8px 8px 10px;
+  display: flex; flex-direction: column; gap: 4px; cursor: pointer; text-align: left; color: var(--ink); font: inherit; }
+.turn-card:hover { border-color: var(--accent); }
+.turn-card.active { border-color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.turn-card canvas { width: 100%; aspect-ratio: 4 / 5; display: block; }
+.turn-card strong { font-size: 13px; font-weight: 600; }
+.turn-card .label { font-size: 10px; }
+.expr { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 720px) { .expr { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 420px) { .expr { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.expr .turn-card canvas { aspect-ratio: 1 / 1; }
+footer { color: var(--muted); font-size: 13px; border-top: 1.5px solid var(--line); padding-top: 12px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+</style>
+
+<div class="wrap">
+  <header class="head">
+    <div class="head-main">
+      <span class="label">Lembar karakter · KC-01 · Turnaround 360°</span>
+      <h1>Oyen</h1>
+      <p class="tagline">Kucing kampung oranye yang rakus dan pemberani. Hobinya tidur di jok motor tetangga dan menunggu ikan asin jatuh dari meja.</p>
+    </div>
+    <dl class="meta">
+      <dt>Ras</dt><dd>Kampung, tabby oranye</dd>
+      <dt>Umur</dt><dd>2 tahun</dd>
+      <dt>Tinggi</dt><dd>2¼ kepala (chibi)</dd>
+      <dt>Mata</dt><dd>Hijau daun, pupil celah</dd>
+      <dt>Ciri</dt><dd>Kalung merah + lonceng</dd>
+    </dl>
+  </header>
+
+  <div class="top">
+    <section class="stage" aria-label="Panggung putar">
+      <div class="stage-bar">
+        <span class="label">Putar 360° · seret untuk memutar</span>
+        <span class="readout">θ = <b id="deg">000°</b> · <span id="viewName">Depan</span></span>
+      </div>
+      <canvas id="main" tabindex="0" width="920" height="920" aria-label="Oyen berputar 360 derajat"></canvas>
+      <div class="controls">
+        <div class="row">
+          <button class="btn primary" id="play" type="button">Jeda</button>
+          <input type="range" id="angle" min="0" max="359" value="0" aria-label="Sudut putar">
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="snap"> Patah 8 arah (gaya sprite)</label>
+          <label class="toggle"><input type="checkbox" id="guides" checked> Garis proporsi</label>
+          <label class="toggle">Kecepatan
+            <select id="speed">
+              <option value="30">Lambat</option>
+              <option value="60" selected>Normal</option>
+              <option value="120">Cepat</option>
+            </select>
+          </label>
+        </div>
+        <div class="row" id="exprChips" role="group" aria-label="Ekspresi"></div>
+      </div>
+    </section>
+
+    <aside class="notes">
+      <div class="panel">
+        <span class="label">Palet</span>
+        <h2>Warna resmi</h2>
+        <div class="swatches" id="swatches"></div>
+      </div>
+      <div class="panel">
+        <span class="label">Catatan animator</span>
+        <h2>Aturan menggambar Oyen</h2>
+        <ul>
+          <li>Kepala 100 unit, badan duduk 120 unit. Kepala selalu lebih lebar dari badan.</li>
+          <li>Telinga selalu digambar di belakang garis kepala, termasuk saat tampak belakang.</li>
+          <li>Belang dahi tiga garis, garis tengah paling panjang.</li>
+          <li>Ekor melingkar ke kanan Oyen saat duduk. Ujungnya oranye tua.</li>
+          <li>Lonceng emas selalu di tengah depan kalung.</li>
+          <li>Moncong krem menonjol sedikit di tampak samping.</li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+
+  <section>
+    <div class="sec-head">
+      <h2>Turnaround 8 arah</h2>
+      <p>Klik salah satu untuk membuka sudut itu di panggung.</p>
+    </div>
+    <div class="turn" id="turn"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Lembar ekspresi</h2>
+      <p>Klik untuk memakai ekspresi di panggung putar.</p>
+    </div>
+    <div class="expr" id="expr"></div>
+  </section>
+
+  <footer>
+    <span>Oyen · karakter orisinal · digambar prosedural di kanvas 2D</span>
+    <span class="label">Satuan: unit model, lantai = 0</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const C = {
+    fur: '#F4A04A', furDark: '#DE7C2C', stripe: '#C45E1E', cream: '#FFF3E2',
+    pink: '#F49AA8', ink: '#4A2A18', eye: '#7CC36A', pupil: '#1E1A17',
+    collar: '#D9434A', bell: '#F2C230', muzzleLine: '#E7C7A2'
+  };
+  const PALETTE = [
+    ['Bulu oranye', C.fur], ['Oranye tua', C.furDark], ['Belang', C.stripe],
+    ['Krem', C.cream], ['Merah muda', C.pink], ['Hijau mata', C.eye],
+    ['Kalung', C.collar], ['Lonceng', C.bell], ['Garis tinta', C.ink]
+  ];
+  const VIEWS = [
+    [0, 'Depan'], [45, '¾ Depan Kiri'], [90, 'Samping Kiri'], [135, '¾ Belakang Kiri'],
+    [180, 'Belakang'], [225, '¾ Belakang Kanan'], [270, 'Samping Kanan'], [315, '¾ Depan Kanan']
+  ];
+  const EXPR = [['normal', 'Normal'], ['senang', 'Senang'], ['kaget', 'Kaget'], ['marah', 'Marah'], ['tidur', 'Tidur']];
+  const TAU = Math.PI * 2, D2R = Math.PI / 180;
+
+  // ---------- geometri ----------
+  function rot(p, th) {
+    const c = Math.cos(th), s = Math.sin(th);
+    return { x: p[0] * c + p[2] * s, y: p[1], z: -p[0] * s + p[2] * c };
+  }
+  function makeView(ctx, th, cx, base, s) {
+    return {
+      ctx, th, s, c: Math.cos(th), sn: Math.sin(th),
+      P(p) { const r = rot(p, th); return { x: cx + r.x * s, y: base - r.y * s, z: r.z }; }
+    };
+  }
+  // ellipsoid tegak: {c:[x,y,z], a:[ax,ay,az]}
+  function ellProj(V, E) {
+    const p = V.P(E.c);
+    const rx = Math.hypot(E.a[0] * V.c, E.a[2] * V.sn) * V.s;
+    return { x: p.x, y: p.y, z: p.z, rx, ry: E.a[1] * V.s };
+  }
+  function surf(V, E, phi, dy) {
+    const k = Math.sqrt(Math.max(0, 1 - (dy / E.a[1]) ** 2));
+    const p = V.P([E.c[0] + E.a[0] * k * Math.sin(phi), E.c[1] + dy, E.c[2] + E.a[2] * k * Math.cos(phi)]);
+    p.f = Math.cos(phi + V.th);
+    return p;
+  }
+  function ellipse(ctx, x, y, rx, ry, fill, stroke, lw) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, Math.max(rx, .01), Math.max(ry, .01), 0, 0, TAU);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+  }
+  function strokeSurf(V, E, pts, color, lw) {
+    const ctx = V.ctx;
+    ctx.strokeStyle = color; ctx.lineWidth = lw * V.s; ctx.lineCap = 'round';
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = surf(V, E, pts[i][0], pts[i][1]), b = surf(V, E, pts[i + 1][0], pts[i + 1][1]);
+      if (a.f > .05 && b.f > .05) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+    }
+  }
+  const lerpPts = (a0, a1, d0, d1, n = 6) =>
+    Array.from({ length: n + 1 }, (_, i) => [a0 + (a1 - a0) * i / n, d0 + (d1 - d0) * i / n]);
+
+  const BODY = { c: [0, 62, 0], a: [46, 58, 52] };
+  const HEAD = { c: [0, 150, 6], a: [60, 50, 50] };
+  const TAIL = [[0, 14, -46], [22, 7, -62], [48, 8, -60], [66, 22, -44], [73, 48, -28], [70, 76, -18], [58, 96, -14]];
+
+  // ---------- gambar Oyen ----------
+  function drawCat(ctx, th, cx, base, s, expr) {
+    const V = makeView(ctx, th, cx, base, s);
+    const OL = 3.2 * Math.max(s, .6);
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+
+    // bayangan lantai
+    ellipse(ctx, cx, base, 78 * s, 11 * s, 'rgba(40,30,20,.13)');
+
+    // --- grup badan (urut kedalaman) ---
+    const items = [];
+    items.push({ z: V.P(BODY.c).z, draw() {
+      const e = ellProj(V, BODY);
+      ellipse(ctx, e.x, e.y, e.rx, e.ry, C.fur, C.ink, OL);
+      ctx.save(); ctx.beginPath(); ctx.ellipse(e.x, e.y, e.rx - OL / 2, e.ry - OL / 2, 0, 0, TAU); ctx.clip();
+      const chest = surf(V, BODY, 0, 8);
+      if (chest.f > 0) ellipse(ctx, chest.x, chest.y, 25 * s * chest.f, 38 * s, C.cream);
+      for (const sg of [-1, 1]) for (const ph of [1.1, 1.45, 1.8]) strokeSurf(V, BODY, lerpPts(sg * ph, sg * (ph + .1), 28, -22), C.stripe, 7);
+      for (const dy of [34, 14, -6]) strokeSurf(V, BODY, lerpPts(Math.PI - .75, Math.PI + .75, dy, dy, 10), C.stripe, 7);
+      ctx.restore();
+    }});
+    for (const sg of [-1, 1]) {
+      const H = { c: [sg * 32, 24, -22], a: [18, 24, 30] };
+      items.push({ z: V.P(H.c).z, draw() { const e = ellProj(V, H); ellipse(ctx, e.x, e.y, e.rx, e.ry, C.fur, C.ink, OL); } });
+      const top = [sg * 18, 58, 30], bot = [sg * 18, 14, 36];
+      items.push({ z: (V.P(top).z + V.P(bot).z) / 2 + 1, draw() {
+        const a = V.P(top), b = V.P(bot);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        ctx.strokeStyle = C.ink; ctx.lineWidth = 24 * s + OL * 2; ctx.stroke();
+        ctx.strokeStyle = C.fur; ctx.lineWidth = 24 * s; ctx.stroke();
+      }});
+      const PAW = { c: [sg * 18, 9, 40], a: [14, 9, 15] };
+      items.push({ z: V.P(PAW.c).z + 2, draw() { const e = ellProj(V, PAW); ellipse(ctx, e.x, e.y, e.rx, e.ry, C.cream, C.ink, OL); } });
+    }
+    items.push({ z: TAIL.reduce((m, p) => m + V.P(p).z, 0) / TAIL.length, draw() {
+      const pts = TAIL.map(p => V.P(p));
+      const path = () => { ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y); };
+      path(); ctx.strokeStyle = C.ink; ctx.lineWidth = 15 * s + OL * 2; ctx.stroke();
+      for (let i = 0; i < pts.length - 1; i++) {
+        ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(pts[i + 1].x, pts[i + 1].y);
+        ctx.strokeStyle = i >= pts.length - 3 ? C.stripe : (i % 2 ? C.furDark : C.fur);
+        ctx.lineWidth = 15 * s; ctx.stroke();
+      }
+    }});
+    items.sort((a, b) => a.z - b.z).forEach(it => it.draw());
+
+    // --- kalung ---
+    const nk = V.P([0, 106, 0]);
+    const nrx = Math.hypot(34 * V.c, 31 * V.sn) * s;
+    ellipse(ctx, nk.x, nk.y, nrx, 7 * s, null, C.ink, 9 * s + OL * 2);
+    ellipse(ctx, nk.x, nk.y, nrx, 7 * s, null, C.collar, 9 * s);
+
+    // --- kepala ---
+    const ears = [-1, 1].map(sg => ({ sg, A: [sg * 57, 170, 4], B: [sg * 15, 192, -14], T: [sg * 45, 228, -4] }));
+    for (const ear of ears) {
+      const a = V.P(ear.A), b = V.P(ear.B), t = V.P(ear.T);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(t.x, t.y); ctx.lineTo(b.x, b.y); ctx.closePath();
+      ctx.fillStyle = C.fur; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = OL; ctx.stroke();
+      if (Math.cos(V.th + ear.sg * .35) > .1) {
+        const g = { x: (a.x + b.x + t.x) / 3, y: (a.y + b.y + t.y) / 3 + 4 * s };
+        const sh = p => ({ x: g.x + (p.x - g.x) * .55, y: g.y + (p.y - g.y) * .6 });
+        const [ia, ib, it] = [sh(a), sh(b), sh(t)];
+        ctx.beginPath(); ctx.moveTo(ia.x, ia.y); ctx.lineTo(it.x, it.y); ctx.lineTo(ib.x, ib.y); ctx.closePath();
+        ctx.fillStyle = C.pink; ctx.fill();
+      }
+    }
+
+    const headZ = V.P(HEAD.c).z;
+    const muzzles = [-1, 1].map(sg => ({ c: [sg * 10, 135, 50], a: [13, 11, 13] }))
+      .map(M => ({ M, z: V.P(M.c).z })).sort((a, b) => a.z - b.z);
+    const drawMuzzle = m => { const e = ellProj(V, m.M); ellipse(ctx, e.x, e.y, e.rx, e.ry, C.cream, C.muzzleLine, 1.8 * s); };
+    muzzles.filter(m => m.z < headZ).forEach(drawMuzzle);
+
+    const h = ellProj(V, HEAD);
+    ellipse(ctx, h.x, h.y, h.rx, h.ry, C.fur, C.ink, OL);
+    ctx.save(); ctx.beginPath(); ctx.ellipse(h.x, h.y, h.rx - OL / 2, h.ry - OL / 2, 0, 0, TAU); ctx.clip();
+    // belang dahi, pipi, belakang kepala
+    strokeSurf(V, HEAD, lerpPts(0, 0, 49, 26), C.stripe, 6.5);
+    for (const sg of [-1, 1]) strokeSurf(V, HEAD, lerpPts(sg * .24, sg * .27, 47, 32), C.stripe, 6);
+    for (const sg of [-1, 1]) for (const dy of [-4, -15]) strokeSurf(V, HEAD, lerpPts(sg * 1.05, sg * 1.4, dy, dy + 3), C.stripe, 5.5);
+    for (const ph of [-.35, 0, .35]) strokeSurf(V, HEAD, lerpPts(Math.PI + ph, Math.PI + ph * 1.2, 48, ph ? 18 : 8), C.stripe, 7);
+    // pipi merona
+    for (const sg of [-1, 1]) {
+      const b = surf(V, HEAD, sg * .66, -17);
+      if (b.f > .1) { ctx.globalAlpha = expr === 'senang' ? .8 : .5; ellipse(ctx, b.x, b.y, 10 * s * b.f, 5.5 * s, C.pink); ctx.globalAlpha = 1; }
+    }
+    // mata
+    for (const sg of [-1, 1]) {
+      const e = surf(V, HEAD, sg * .42, 4);
+      if (e.f > .08) drawEye(ctx, e.x, e.y, e.f, s, expr, sg * Math.sign(V.c || 1));
+    }
+    ctx.restore();
+
+    muzzles.filter(m => m.z >= headZ).forEach(drawMuzzle);
+
+    // hidung, mulut, kumis
+    if (V.c > -.05) {
+      const n = V.P([0, 143, 63]);
+      const fw = Math.max(V.c, .4);
+      ctx.beginPath();
+      ctx.moveTo(n.x - 7 * s * fw, n.y - 3 * s); ctx.lineTo(n.x + 7 * s * fw, n.y - 3 * s); ctx.lineTo(n.x, n.y + 4 * s); ctx.closePath();
+      ctx.fillStyle = C.pink; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 1.8 * s; ctx.stroke();
+      if (V.c > .15) drawMouth(ctx, V, expr, n, s);
+    }
+    for (const sg of [-1, 1]) {
+      if (Math.cos(V.th + sg * .7) < 0) continue;
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 1.6 * s; ctx.globalAlpha = .8;
+      for (const dy of [5, 0, -5]) {
+        const a = V.P([sg * 20, 137 + dy, 54]), b = V.P([sg * 62, 140 + dy * 2.6, 40]);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo((a.x + b.x) / 2, (a.y + b.y) / 2 - 3 * s, b.x, b.y); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    // lonceng
+    const bell = V.P([0, 96, 34]);
+    if (bell.z > 0) {
+      ellipse(ctx, bell.x, bell.y, 8 * s, 8 * s, C.bell, C.ink, 2.4 * s);
+      ctx.beginPath(); ctx.moveTo(bell.x - 4 * s, bell.y + 2 * s); ctx.lineTo(bell.x + 4 * s, bell.y + 2 * s);
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 1.8 * s; ctx.stroke();
+    }
+    if (expr === 'tidur') {
+      ctx.fillStyle = '#6F8BB0'; ctx.font = `700 ${22 * s}px Fredoka, system-ui, sans-serif`;
+      ctx.fillText('z', cx + 62 * s, base - 200 * s); ctx.font = `700 ${30 * s}px Fredoka, system-ui, sans-serif`;
+      ctx.fillText('Z', cx + 78 * s, base - 222 * s);
+    }
+  }
+
+  function drawEye(ctx, x, y, f, s, expr, side) {
+    const w = f * s;
+    if (expr === 'senang') {
+      ctx.beginPath(); ctx.ellipse(x, y + 5 * s, 11 * w, 9 * s, 0, Math.PI, TAU);
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 4 * s; ctx.stroke(); return;
+    }
+    if (expr === 'tidur') {
+      ctx.beginPath(); ctx.ellipse(x, y - 1 * s, 11 * w, 7 * s, 0, .1, Math.PI - .1);
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 4 * s; ctx.stroke(); return;
+    }
+    if (expr === 'kaget') {
+      ellipse(ctx, x, y, 14 * w, 17 * s, '#FFFFFF', C.ink, 3 * s);
+      ellipse(ctx, x, y, 5 * w, 5 * s, C.pupil);
+      ellipse(ctx, x - 2 * w, y - 2 * s, 1.8 * s, 1.8 * s, '#FFFFFF'); return;
+    }
+    ellipse(ctx, x, y, 14.5 * w, 17.5 * s, C.ink);
+    ellipse(ctx, x, y, 12.5 * w, 15.5 * s, C.eye);
+    ellipse(ctx, x, y + 1 * s, (expr === 'marah' ? 2.8 : 4.6) * w, 12.5 * s, C.pupil);
+    ellipse(ctx, x - 4 * w, y - 6 * s, 4 * s * Math.max(f, .5), 4 * s, '#FFFFFF');
+    ellipse(ctx, x + 4 * w, y + 6 * s, 1.8 * s * Math.max(f, .5), 1.8 * s, '#FFFFFF');
+    if (expr === 'marah') {
+      // kelopak miring: sudut dalam lebih rendah
+      const inner = -side, hw = 17 * w;
+      const yIn = y - 3 * s, yOut = y - 13 * s;
+      const xIn = x + inner * hw, xOut = x - inner * hw;
+      ctx.beginPath(); ctx.moveTo(xOut, y - 22 * s); ctx.lineTo(xIn, y - 22 * s); ctx.lineTo(xIn, yIn); ctx.lineTo(xOut, yOut); ctx.closePath();
+      ctx.fillStyle = C.fur; ctx.fill();
+      ctx.beginPath(); ctx.moveTo(xOut, yOut); ctx.lineTo(xIn, yIn);
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 4 * s; ctx.stroke();
+    }
+  }
+
+  function drawMouth(ctx, V, expr, n, s) {
+    const f = Math.max(V.c, 0), w = 6 * s * f, y = n.y + 4 * s;
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 2.2 * s;
+    if (expr === 'kaget') { ellipse(ctx, n.x, y + 8 * s, 4.5 * s * f, 6 * s, '#7A3A33', C.ink, 2 * s); return; }
+    if (expr === 'senang') {
+      ctx.beginPath(); ctx.moveTo(n.x - 8 * s * f, y + 2 * s);
+      ctx.quadraticCurveTo(n.x, y + 16 * s, n.x + 8 * s * f, y + 2 * s); ctx.closePath();
+      ctx.fillStyle = '#C9505E'; ctx.fill(); ctx.stroke(); return;
+    }
+    if (expr === 'marah') {
+      ctx.beginPath(); ctx.moveTo(n.x - w * 1.2, y + 7 * s); ctx.quadraticCurveTo(n.x, y + 2 * s, n.x + w * 1.2, y + 7 * s); ctx.stroke();
+      return;
+    }
+    ctx.beginPath();
+    ctx.moveTo(n.x, y); ctx.quadraticCurveTo(n.x - w * .3, y + 6 * s, n.x - w, y + 4 * s);
+    ctx.moveTo(n.x, y); ctx.quadraticCurveTo(n.x + w * .3, y + 6 * s, n.x + w, y + 4 * s);
+    ctx.stroke();
+  }
+
+  // ---------- kanvas ----------
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  function fit(canvas) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const r = canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    return { w, h, dpr };
+  }
+
+  const main = document.getElementById('main');
+  const state = { deg: 0, playing: !matchMedia('(prefers-reduced-motion: reduce)').matches, speed: 60, snap: false, guides: true, expr: 'normal' };
+
+  function shownDeg() { return state.snap ? (Math.round(state.deg / 45) * 45) % 360 : state.deg; }
+  function viewName(d) {
+    const i = Math.round(((d % 360) + 360) % 360 / 45) % 8;
+    return VIEWS[i][1];
+  }
+
+  function drawMain() {
+    const { w, h } = fit(main);
+    const ctx = main.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    const s = w / 300, cx = w / 2, base = h * .9;
+    if (state.guides) {
+      const lines = [[0, 'lantai · 0'], [100, 'dagu · 100'], [150, 'mata · 150'], [200, 'puncak kepala · 200'], [228, 'ujung telinga · 228']];
+      ctx.save();
+      ctx.strokeStyle = css('--line'); ctx.fillStyle = css('--muted');
+      ctx.lineWidth = Math.max(1, w / 600); ctx.setLineDash([6 * w / 600, 6 * w / 600]);
+      ctx.font = `500 ${11 * w / 460}px "JetBrains Mono", ui-monospace, monospace`;
+      for (const [y, t] of lines) {
+        const yy = base - y * s;
+        ctx.beginPath(); ctx.moveTo(w * .04, yy); ctx.lineTo(w * .96, yy); ctx.stroke();
+        ctx.fillText(t, w * .04, yy - 5 * w / 460);
+      }
+      ctx.beginPath(); ctx.moveTo(cx, base + 8 * s); ctx.lineTo(cx, base - 240 * s); ctx.stroke();
+      ctx.restore();
+    }
+    const d = shownDeg();
+    drawCat(ctx, d * D2R, cx, base, s, state.expr);
+    document.getElementById('deg').textContent = String(Math.round(d) % 360).padStart(3, '0') + '°';
+    document.getElementById('viewName').textContent = viewName(d);
+    document.querySelectorAll('#turn .turn-card').forEach((el, i) => el.classList.toggle('active', Math.round(d) % 360 === VIEWS[i][0]));
+  }
+
+  // turnaround thumbnails
+  const turnEl = document.getElementById('turn');
+  const thumbs = VIEWS.map(([deg, name], i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'turn-card';
+    b.innerHTML = `<canvas aria-hidden="true"></canvas><span class="label">TA-0${i + 1} · ${String(deg).padStart(3, '0')}°</span><strong>${name}</strong>`;
+    b.addEventListener('click', () => { state.deg = deg; setPlaying(false); syncSlider(); drawMain(); });
+    turnEl.appendChild(b);
+    return { cv: b.querySelector('canvas'), deg };
+  });
+  const exprEl = document.getElementById('expr');
+  const exprThumbs = EXPR.map(([key, name], i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'turn-card';
+    b.innerHTML = `<canvas aria-hidden="true"></canvas><span class="label">EX-0${i + 1}</span><strong>${name}</strong>`;
+    b.addEventListener('click', () => setExpr(key));
+    exprEl.appendChild(b);
+    return { cv: b.querySelector('canvas'), key, btn: b };
+  });
+
+  function drawThumbs() {
+    for (const t of thumbs) {
+      const { w, h } = fit(t.cv); const ctx = t.cv.getContext('2d'); ctx.clearRect(0, 0, w, h);
+      const s = w / 190; drawCat(ctx, t.deg * D2R, w / 2, h * .93, s, 'normal');
+    }
+    for (const t of exprThumbs) {
+      const { w, h } = fit(t.cv); const ctx = t.cv.getContext('2d'); ctx.clearRect(0, 0, w, h);
+      const s = w / 150; drawCat(ctx, 0.18, w / 2, h * .56 + 150 * s, s, t.key);
+      t.btn.classList.toggle('active', t.key === state.expr);
+    }
+  }
+
+  // swatches & chips
+  document.getElementById('swatches').innerHTML = PALETTE.map(([n, hex]) =>
+    `<div class="sw"><i style="background:${hex}"></i><div><span>${n}</span><code>${hex}</code></div></div>`).join('');
+  const chips = document.getElementById('exprChips');
+  chips.innerHTML = EXPR.map(([k, n]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${k === state.expr}">${n}</button>`).join('');
+  chips.addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) setExpr(b.dataset.k); });
+  function setExpr(k) {
+    state.expr = k;
+    chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.k === k));
+    exprThumbs.forEach(t => t.btn.classList.toggle('active', t.key === k));
+    drawMain();
+  }
+
+  // controls
+  const playBtn = document.getElementById('play'), slider = document.getElementById('angle');
+  function setPlaying(p) { state.playing = p; playBtn.textContent = p ? 'Jeda' : 'Putar'; }
+  function syncSlider() { slider.value = Math.round(state.deg) % 360; }
+  playBtn.addEventListener('click', () => setPlaying(!state.playing));
+  slider.addEventListener('input', () => { state.deg = +slider.value; setPlaying(false); drawMain(); });
+  document.getElementById('speed').addEventListener('change', e => state.speed = +e.target.value);
+  document.getElementById('snap').addEventListener('change', e => { state.snap = e.target.checked; drawMain(); });
+  document.getElementById('guides').addEventListener('change', e => { state.guides = e.target.checked; drawMain(); });
+  setPlaying(state.playing);
+
+  // seret untuk memutar
+  let drag = null;
+  main.addEventListener('pointerdown', e => { drag = { x: e.clientX, deg: state.deg, was: state.playing }; setPlaying(false); main.setPointerCapture(e.pointerId); });
+  main.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const r = main.getBoundingClientRect();
+    state.deg = (((drag.deg - (e.clientX - drag.x) / r.width * 360) % 360) + 360) % 360;
+    syncSlider(); drawMain();
+  });
+  const end = () => { if (drag) { setPlaying(drag.was); drag = null; } };
+  main.addEventListener('pointerup', end); main.addEventListener('pointercancel', end);
+  main.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { state.deg = (state.deg + (e.key === 'ArrowRight' ? 45 : -45) + 360) % 360; syncSlider(); drawMain(); }
+  });
+
+  let last = performance.now();
+  function tick(t) {
+    const dt = Math.min(.1, (t - last) / 1000); last = t;
+    if (state.playing) { state.deg = (state.deg + state.speed * dt) % 360; syncSlider(); drawMain(); }
+    requestAnimationFrame(tick);
+  }
+  const redrawAll = () => { drawMain(); drawThumbs(); };
+  new ResizeObserver(redrawAll).observe(document.body);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redrawAll);
+  new MutationObserver(redrawAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  if (document.fonts) document.fonts.ready.then(redrawAll);
+  redrawAll();
+  requestAnimationFrame(tick);
+})();
+</script>
