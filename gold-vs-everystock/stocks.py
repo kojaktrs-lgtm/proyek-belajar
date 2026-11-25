@@ -77,4 +77,15 @@ STOCKS = {
             ("2026-10-06", "2026-11-19", "Oct 2026: NVIDIA's all-time high"),
         ],
     ),
+    "DIS": dict(
+        name="DISNEY", label="Disney", color="#4f8cff",
+        events=[
+            ("2020-03-23", "2020-06-10", "2020: COVID crash, Disney −42%"),
+            ("2021-03-08", "2021-06-30", "Mar 2021: Disney's all-time high"),
+            ("2022-03-04", "2022-07-31", "Mar 2022: gold takes the lead for good"),
+            ("2022-11-09", "2023-01-31", "Nov 2022: Disney −13% in a day"),
+            ("2023-10-04", "2024-01-31", "Oct 2023: Disney −61% from its peak"),
+            ("2026-01-29", "2026-03-25", "Jan 2026: gold hits record high"),
+        ],
+    ),
 }
