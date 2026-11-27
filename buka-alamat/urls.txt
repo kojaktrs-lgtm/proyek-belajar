@@ -1,0 +1,5 @@
+# Daftar alamat yang akan dibuka otomatis.
+# Satu alamat per baris. Baris diawali '#' diabaikan.
+https://www.google.com
+https://github.com
+https://www.wikipedia.org
